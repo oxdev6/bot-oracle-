@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+!*.example
+
+# Build artifacts
+dist/
+out/
+artifacts/
+cache/
+coverage/
+coverage.json
+.next/
+out-tsc/
+
+# Foundry (if used locally)
+foundry-out/
+broadcast/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,9 @@
+// Placeholder package name so sub-workspaces can be referenced easily.
+// The node-client and dashboard import ABIs + addresses from this package.
+{
+  "name": "@bot-oracle/config",
+  "version": "1.0.0",
+  "private": true,
+  "main": "addresses.ts",
+  "types": "addresses.ts"
+}

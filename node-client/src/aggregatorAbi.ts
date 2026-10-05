@@ -1,0 +1,73 @@
+/** Minimal ABI surface the node-client touches on OracleAggregator. */
+export const aggregatorAbi = [
+  {
+    type: "function",
+    name: "submitPrice",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "assetId", type: "bytes32" },
+      { name: "price", type: "int256" },
+      { name: "sourceTimestamp", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "getLatestPrice",
+    stateMutability: "view",
+    inputs: [{ name: "assetId", type: "bytes32" }],
+    outputs: [
+      { name: "price", type: "int256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "roundId", type: "uint80" },
+      { name: "decimals", type: "uint8" },
+      { name: "isPaused", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "getFeedHealth",
+    stateMutability: "view",
+    inputs: [{ name: "assetId", type: "bytes32" }],
+    outputs: [
+      { name: "isPaused", type: "bool" },
+      { name: "isStale", type: "bool" },
+      { name: "hasPrice", type: "bool" },
+      { name: "lastUpdate", type: "uint256" },
+      { name: "lastRoundSubmissions", type: "uint256" },
+      { name: "lastRoundVetoed", type: "uint256" },
+      { name: "roundStart", type: "uint256" },
+      { name: "nextRoundAt", type: "uint256" },
+      { name: "currentRound", type: "uint256" },
+      { name: "openRoundSubmissions", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "roundInterval",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "vault",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "pauseFeed",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "assetId", type: "bytes32" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "resumeFeed",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "assetId", type: "bytes32" }],
+    outputs: [],
+  },
+] as const;
