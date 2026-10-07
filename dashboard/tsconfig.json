@@ -16,11 +16,10 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
-    "jsx": "preserve",
-    "baseUrl": ".",
+    "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "*"
+        "./*"
       ]
     },
     "isolatedModules": true,
@@ -34,7 +33,8 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "next-env.d.ts"
+    "next-env.d.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

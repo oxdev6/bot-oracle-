@@ -8,6 +8,9 @@ node_modules/
 .env.*.local
 *.pem
 !*.example
+funded wallet address/
+walletaddress.txt
+*.key
 
 # Build artifacts
 dist/
@@ -34,3 +37,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+.vercel
+.env*

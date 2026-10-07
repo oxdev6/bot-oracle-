@@ -11,8 +11,20 @@ const BREAKER_BPS = Number(process.env.BREAKER_BPS ?? 2000);                // 2
 const STALE_AFTER = Number(process.env.STALE_AFTER ?? 3600);                // 1h
 const EMISSION_PER_ROUND = ethers.parseEther(process.env.EMISSION_PER_ROUND ?? "10");
 
-async function deploy(verify: boolean) {
+function validateDeploymentInputs() {
   const TREASURY = process.env.TREASURY_ADDRESS ?? "";
+  const deployerKey = process.env.DEPLOY_KEY ?? process.env.PRIVATE_KEY ?? "";
+  if (!deployerKey) throw new Error("DEPLOY_KEY or PRIVATE_KEY is required.");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(deployerKey)) throw new Error("DEPLOY_KEY is not a valid 32-byte private key.");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(TREASURY)) throw new Error("TREASURY_ADDRESS must be a valid 20-byte multisig address.");
+  if (![120, 180, 300, 600].includes(ROOUND_INTERVAL) || ROOUND_INTERVAL === 0) throw new Error("ROUND_INTERVAL_SECONDS must be one of 120, 180, 300, or 600.");
+  if ([DEVIATION_BPS, BREAKER_BPS, STALE_AFTER].some((value) => !Number.isFinite(value) || value <= 0)) throw new Error("Protocol parameters must be positive numbers.");
+  if (DEVIATION_BPS >= BREAKER_BPS) throw new Error("DEVIATION_BPS must be smaller than BREAKER_BPS.");
+  return TREASURY;
+}
+
+async function deploy(verify: boolean) {
+  const TREASURY = validateDeploymentInputs();
   const [deployer] = await ethers.getSigners();
   const deployerAddr = await deployer.getAddress();
   const chainId = (await ethers.provider.getNetwork()).chainId;
@@ -22,7 +34,10 @@ async function deploy(verify: boolean) {
   if (verify && chainId !== 968n && chainId !== 677n) {
     throw new Error("Verification only supported on botTestnet / botMainnet");
   }
-  if (!TREASURY) throw new Error("Set TREASURY_ADDRESS (multisig). Never use an EOA.");
+  const balance = await deployer.provider.getBalance(deployerAddr);
+  if (balance === 0n) throw new Error(`Deployer ${deployerAddr} has no native BOT balance.`);
+  if (verify && !process.env.BOT_TESTNET_ETHERSCAN_KEY && chainId === 968n) throw new Error("BOT_TESTNET_ETHERSCAN_KEY is required for testnet verification.");
+  if (verify && !process.env.BOT_MAINNET_ETHERSCAN_KEY && chainId === 677n) throw new Error("BOT_MAINNET_ETHERSCAN_KEY is required for mainnet verification.");
 
   console.log(`\n=== Lodestar Oracle deployment on ${netName} (chain ${chainId}) ===`);
   console.log(`Deployer: ${deployerAddr}`);

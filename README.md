@@ -69,6 +69,44 @@ cp .env.example .env.local        # point NEXT_PUBLIC_* at deployed contracts
 npm run dev                       # http://localhost:3000
 ```
 
+## Deployment
+
+### Testnet
+
+```bash
+cd contracts
+cp .env.example .env
+# set DEPLOY_KEY, TREASURY_ADDRESS, and optional verification keys
+npm run deploy:testnet -- --verify
+npm run registry -- --network botTestnet
+```
+
+The deploy script writes the registry to `contracts/config/addresses/botTestnet.json`. Verify all tracked addresses with the registry command before using them in the dashboard or node client.
+
+### Mainnet
+
+> Mainnet deployment is irreversible and requires a funded multisig treasury, an audited deployment procedure, and approval from the responsible operator team. Do not set `BOT_MAINNET_RPC` to a random provider or use a personal EOA as the treasury.
+
+```bash
+cd contracts
+cp .env.example .env
+# set DEPLOY_KEY, TREASURY_ADDRESS, and BOT_MAINNET_ETHERSCAN_KEY
+npm run deploy:mainnet -- --verify
+npm run registry -- --network botMainnet
+```
+
+### Dashboard
+
+```bash
+cd dashboard
+cp .env.example .env.local
+# set the real contract addresses and the intended BOT Chain ID
+npm run build
+npm run start
+```
+
+Deploy the dashboard to Vercel with the same environment variables. `NEXT_PUBLIC_AGGREGATOR_ADDRESS` is the only required live-chain address for the dashboard; the token and vault addresses are also required for summary data.
+
 ## Documentation
 
 - [`docs/spec.md`](docs/spec.md) — one-page protocol spec (params, roles, flow).

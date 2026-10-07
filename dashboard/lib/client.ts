@@ -1,11 +1,23 @@
 /**
  * Chain reader for the public dashboard.
  *
- * All reads are on-chain-only (no server state). If the contract addresses
- * are not configured (not deployed yet) the dashboard renders a placeholder
- * state so it still looks presentable.
+ * Reads protocol data directly from the configured BOT chain. The dashboard
+ * must have valid deployment addresses; synthetic data is intentionally not
+ * supported in production mode.
  */
-import { createPublicClient, http, parseAbi, formatUnits } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  custom,
+  defineChain,
+  formatUnits,
+  http,
+  parseAbi,
+  parseUnits,
+  type Address,
+  type EIP1193Provider,
+  type Hash,
+} from "viem";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
@@ -16,8 +28,8 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
  * configured yet" and normalizes to the `"0x"` sentinel — otherwise a naive
  * `!== "0x"` check reports the network as live and every read fails silently.
  */
-function readAddress(name: string): `0x${string}` {
-  const raw = (process.env[name] ?? "").trim();
+function readAddress(value: string | undefined): `0x${string}` {
+  const raw = (value ?? "").trim();
   if (raw === "" || /^0x0*$/.test(raw)) return "0x";
   return raw as `0x${string}`;
 }
@@ -26,14 +38,123 @@ export const CHAIN_CONFIG = {
   chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 968),
   rpcUrl: process.env.NEXT_PUBLIC_RPC_URL ?? "https://rpc.bohr.life",
   scannerUrl: process.env.NEXT_PUBLIC_SCANNER_URL ?? "https://scan.bohr.life",
-  tokenAddress: readAddress("NEXT_PUBLIC_TOKEN_ADDRESS"),
-  vaultAddress: readAddress("NEXT_PUBLIC_VAULT_ADDRESS"),
-  aggregatorAddress: readAddress("NEXT_PUBLIC_AGGREGATOR_ADDRESS"),
+  tokenAddress: readAddress(process.env.NEXT_PUBLIC_TOKEN_ADDRESS),
+  vaultAddress: readAddress(process.env.NEXT_PUBLIC_VAULT_ADDRESS),
+  aggregatorAddress: readAddress(process.env.NEXT_PUBLIC_AGGREGATOR_ADDRESS),
 };
 
-/** True only when a real 20-byte aggregator address is configured. */
 export const isDeployed = ADDRESS_RE.test(CHAIN_CONFIG.aggregatorAddress);
-export const isDemo = !isDeployed;
+
+export interface InjectedWallet {
+  info: {
+    uuid: string;
+    name: string;
+    icon?: string;
+    rdns?: string;
+  };
+  provider: EIP1193Provider;
+}
+
+let activeWallet: EIP1193Provider | null = null;
+
+const BOT_CHAIN = defineChain({
+  id: CHAIN_CONFIG.chainId,
+  name: CHAIN_CONFIG.chainId === 677 ? "BOT Mainnet" : "BOT Testnet",
+  nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
+  rpcUrls: { default: { http: [CHAIN_CONFIG.rpcUrl] } },
+  blockExplorers: { default: { name: "BOT Explorer", url: CHAIN_CONFIG.scannerUrl } },
+});
+
+export function getInjectedWallet(): EIP1193Provider | null {
+  if (typeof window === "undefined") return null;
+  return activeWallet ?? (window as Window & { ethereum?: EIP1193Provider }).ethereum ?? null;
+}
+
+export function setActiveWallet(provider: EIP1193Provider | null): void {
+  activeWallet = provider;
+}
+
+export async function discoverInjectedWallets(): Promise<InjectedWallet[]> {
+  if (typeof window === "undefined") return [];
+
+  const discovered = new Map<EIP1193Provider, InjectedWallet>();
+  const addFallback = () => {
+    const provider = (window as Window & { ethereum?: EIP1193Provider }).ethereum;
+    if (provider && !discovered.has(provider)) {
+      discovered.set(provider, {
+        info: { uuid: "injected-fallback", name: "Browser wallet" },
+        provider,
+      });
+    }
+  };
+  const listener = (event: Event) => {
+    const wallet = (event as CustomEvent<InjectedWallet>).detail;
+    if (wallet?.provider && wallet.info?.uuid && wallet.info.name) {
+      discovered.set(wallet.provider, wallet);
+    }
+  };
+
+  window.addEventListener("eip6963:announceProvider", listener);
+  addFallback();
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+  await new Promise((resolve) => window.setTimeout(resolve, 300));
+  window.removeEventListener("eip6963:announceProvider", listener);
+
+  return [...discovered.values()];
+}
+
+function requireInjectedWallet(): EIP1193Provider {
+  const provider = getInjectedWallet();
+  if (!provider) throw new Error("No browser wallet found. Install or enable MetaMask to continue.");
+  return provider;
+}
+
+async function walletFor(address?: string) {
+  const provider = requireInjectedWallet();
+  const client = createWalletClient({ chain: BOT_CHAIN, transport: custom(provider) });
+  if (address) {
+    const accounts = await client.requestAddresses();
+    if (!accounts.some((account) => account.toLowerCase() === address.toLowerCase())) {
+      throw new Error("The connected wallet account changed. Reconnect your wallet and try again.");
+    }
+  }
+
+  const chainId = await client.getChainId();
+  if (chainId !== CHAIN_CONFIG.chainId) {
+    try {
+      await client.switchChain({ id: CHAIN_CONFIG.chainId });
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== 4902) throw error;
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: `0x${CHAIN_CONFIG.chainId.toString(16)}`,
+          chainName: BOT_CHAIN.name,
+          nativeCurrency: BOT_CHAIN.nativeCurrency,
+          rpcUrls: [CHAIN_CONFIG.rpcUrl],
+          blockExplorerUrls: [CHAIN_CONFIG.scannerUrl],
+        }],
+      });
+      await client.switchChain({ id: CHAIN_CONFIG.chainId });
+    }
+  }
+
+  return address
+    ? createWalletClient({
+        account: address as Address,
+        chain: BOT_CHAIN,
+        transport: custom(provider),
+      })
+    : client;
+}
+
+export function getConfigurationError(): string | null {
+  if (!ADDRESS_RE.test(CHAIN_CONFIG.tokenAddress)) return "NEXT_PUBLIC_TOKEN_ADDRESS is not configured.";
+  if (!ADDRESS_RE.test(CHAIN_CONFIG.vaultAddress)) return "NEXT_PUBLIC_VAULT_ADDRESS is not configured.";
+  if (!ADDRESS_RE.test(CHAIN_CONFIG.aggregatorAddress)) return "NEXT_PUBLIC_AGGREGATOR_ADDRESS is not configured.";
+  if (![968, 677].includes(CHAIN_CONFIG.chainId)) return "NEXT_PUBLIC_CHAIN_ID must be 968 (testnet) or 677 (mainnet).";
+  return null;
+}
 
 function makeClient() {
   return createPublicClient({
@@ -67,14 +188,27 @@ const TOKEN_ABI = parseAbi([
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
   "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
 ]);
 
 const VAULT_ABI = parseAbi([
   "function isEligibleOperator(address) view returns (bool)",
   "function stakeOf(address) view returns (uint256)",
+  "function effectiveStake(address) view returns (uint256)",
+  "function minStake() view returns (uint256)",
+  "function requestWithdrawal(uint256 amount)",
+  "function claimWithdrawal(uint256 requestIndex)",
+  "function getWithdrawalRequestCount(address operator) view returns (uint256)",
+  "function withdrawalRequests(address operator, uint256 index) view returns (uint256 amount, uint256 availableAt)",
+  "function stake(uint256 amount)",
   "function totalStake() view returns (uint256)",
   "function getStakerCount() view returns (uint256)",
   "function stakers(uint256) view returns (address)",
+]);
+
+const OPERATOR_AGG_ABI = parseAbi([
+  "function submitPrice(bytes32 assetId, int256 price, uint64 sourceTimestamp)",
 ]);
 
 // Events are declared through parseAbi (not hand-rolled objects) so viem keeps
@@ -121,6 +255,22 @@ export interface OperatorRow {
   isEligible: boolean;
 }
 
+export interface WithdrawalRequest {
+  index: number;
+  amount: bigint;
+  availableAt: Date;
+}
+
+export interface OperatorAccount {
+  tokenBalance: bigint;
+  tokenAllowance: bigint;
+  nativeBalance: bigint;
+  stake: bigint;
+  effectiveStake: bigint;
+  minStake: bigint;
+  withdrawals: WithdrawalRequest[];
+}
+
 export interface RoundRow {
   assetId: string;
   roundId: number;
@@ -137,6 +287,133 @@ export interface SlashRow {
   reason: string;
   txHash: string;
   timestamp: Date;
+}
+
+export async function connectOperatorWallet(provider?: EIP1193Provider): Promise<string> {
+  if (provider) setActiveWallet(provider);
+  const wallet = await walletFor();
+  const [address] = await wallet.requestAddresses();
+  if (!address) throw new Error("The wallet did not return an account.");
+  return address;
+}
+
+export async function getOperatorAccount(address: string): Promise<OperatorAccount> {
+  if (!ADDRESS_RE.test(address)) throw new Error("The connected wallet address is invalid.");
+  const client = makeClient();
+  const [tokenBalance, tokenAllowance, nativeBalance, stake, effectiveStake, minStake, requestCount] = await Promise.all([
+    client.readContract({ address: CHAIN_CONFIG.tokenAddress, abi: TOKEN_ABI, functionName: "balanceOf", args: [address as Address] }),
+    client.readContract({ address: CHAIN_CONFIG.tokenAddress, abi: TOKEN_ABI, functionName: "allowance", args: [address as Address, CHAIN_CONFIG.vaultAddress] }),
+    client.getBalance({ address: address as Address }),
+    client.readContract({ address: CHAIN_CONFIG.vaultAddress, abi: VAULT_ABI, functionName: "stakeOf", args: [address as Address] }),
+    client.readContract({ address: CHAIN_CONFIG.vaultAddress, abi: VAULT_ABI, functionName: "effectiveStake", args: [address as Address] }),
+    client.readContract({ address: CHAIN_CONFIG.vaultAddress, abi: VAULT_ABI, functionName: "minStake" }),
+    client.readContract({ address: CHAIN_CONFIG.vaultAddress, abi: VAULT_ABI, functionName: "getWithdrawalRequestCount", args: [address as Address] }),
+  ]);
+  const withdrawals = await Promise.all(
+    Array.from({ length: Number(requestCount) }, async (_, index) => {
+      const [amount, availableAt] = await client.readContract({
+        address: CHAIN_CONFIG.vaultAddress,
+        abi: VAULT_ABI,
+        functionName: "withdrawalRequests",
+        args: [address as Address, BigInt(index)],
+      });
+      return { index, amount, availableAt: new Date(Number(availableAt) * 1000) };
+    }),
+  );
+
+  return { tokenBalance, tokenAllowance, nativeBalance, stake, effectiveStake, minStake, withdrawals };
+}
+
+async function waitForSuccessfulTransaction(hash: Hash): Promise<void> {
+  const receipt = await makeClient().waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") {
+    throw new Error(`Transaction ${hash} reverted. Check it on the network explorer.`);
+  }
+}
+
+export async function stakeLode(
+  address: string,
+  amount: bigint,
+  onApproval?: () => void,
+): Promise<void> {
+  if (amount <= 0n) throw new Error("Enter a stake amount greater than zero.");
+  const account = address as Address;
+  const wallet = await walletFor(address);
+  const allowance = await makeClient().readContract({
+    address: CHAIN_CONFIG.tokenAddress,
+    abi: TOKEN_ABI,
+    functionName: "allowance",
+    args: [account, CHAIN_CONFIG.vaultAddress],
+  });
+  if (allowance < amount) {
+    onApproval?.();
+    const approvalHash = await wallet.writeContract({
+      address: CHAIN_CONFIG.tokenAddress,
+      abi: TOKEN_ABI,
+      functionName: "approve",
+      args: [CHAIN_CONFIG.vaultAddress, amount],
+      account,
+    });
+    await waitForSuccessfulTransaction(approvalHash);
+  }
+  const hash = await wallet.writeContract({
+    address: CHAIN_CONFIG.vaultAddress,
+    abi: VAULT_ABI,
+    functionName: "stake",
+    args: [amount],
+    account,
+  });
+  await waitForSuccessfulTransaction(hash);
+}
+
+export async function requestLodeWithdrawal(address: string, amount: bigint): Promise<void> {
+  if (amount <= 0n) throw new Error("Enter a withdrawal amount greater than zero.");
+  const account = address as Address;
+  const wallet = await walletFor(address);
+  const hash = await wallet.writeContract({
+    address: CHAIN_CONFIG.vaultAddress,
+    abi: VAULT_ABI,
+    functionName: "requestWithdrawal",
+    args: [amount],
+    account,
+  });
+  await waitForSuccessfulTransaction(hash);
+}
+
+export async function claimLodeWithdrawal(address: string, index: number): Promise<void> {
+  const account = address as Address;
+  const wallet = await walletFor(address);
+  const hash = await wallet.writeContract({
+    address: CHAIN_CONFIG.vaultAddress,
+    abi: VAULT_ABI,
+    functionName: "claimWithdrawal",
+    args: [BigInt(index)],
+    account,
+  });
+  await waitForSuccessfulTransaction(hash);
+}
+
+export async function submitFeedPrice(
+  address: string,
+  assetId: string,
+  rawPrice: string,
+  decimals: number,
+): Promise<void> {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(assetId)) throw new Error("The selected feed has an invalid asset ID.");
+  const price = parseUnits(rawPrice.trim(), decimals);
+  if (price <= 0n) throw new Error("Enter a price greater than zero.");
+  if (price > (1n << 255n) - 1n) throw new Error("The entered price is too large.");
+
+  const account = address as Address;
+  const wallet = await walletFor(address);
+  const hash = await wallet.writeContract({
+    address: CHAIN_CONFIG.aggregatorAddress,
+    abi: OPERATOR_AGG_ABI,
+    functionName: "submitPrice",
+    args: [assetId as `0x${string}`, price, BigInt(Math.floor(Date.now() / 1000))],
+    account,
+  });
+  await waitForSuccessfulTransaction(hash);
 }
 
 export async function getRegistry(): Promise<string[]> {
