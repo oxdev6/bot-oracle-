@@ -45,6 +45,7 @@ export function demoFeeds(): FeedSnapshot[] {
     roundId: 1240,
     isPaused: false,
     isStale: secondsAgo > 60,
+    hasPrice: true,
     roundStart: new Date(now - 15_000),
     nextRoundAt: new Date(now + 105_000),
     submissionsInRound: 5,

@@ -55,6 +55,10 @@ export interface InjectedWallet {
   provider: EIP1193Provider;
 }
 
+function isEip1193Provider(value: unknown): value is EIP1193Provider {
+  return typeof value === "object" && value !== null && "request" in value && typeof (value as { request: unknown }).request === "function";
+}
+
 let activeWallet: EIP1193Provider | null = null;
 
 const BOT_CHAIN = defineChain({
@@ -78,14 +82,26 @@ export async function discoverInjectedWallets(): Promise<InjectedWallet[]> {
   if (typeof window === "undefined") return [];
 
   const discovered = new Map<EIP1193Provider, InjectedWallet>();
+  const addProvider = (provider: EIP1193Provider, fallbackName: string) => {
+    if (!isEip1193Provider(provider) || discovered.has(provider)) return;
+    const info = (provider as EIP1193Provider & { isMetaMask?: boolean; isCoinbaseWallet?: boolean; isBraveWallet?: boolean; info?: { name?: string } }).info;
+    discovered.set(provider, {
+      info: {
+        uuid: info?.name ? `${fallbackName}-${info.name}` : fallbackName,
+        name: info?.name ?? fallbackName,
+      },
+      provider,
+    });
+  };
   const addFallback = () => {
-    const provider = (window as Window & { ethereum?: EIP1193Provider }).ethereum;
-    if (provider && !discovered.has(provider)) {
-      discovered.set(provider, {
-        info: { uuid: "injected-fallback", name: "Browser wallet" },
-        provider,
-      });
+    const globalEthereum = (window as Window & {
+      ethereum?: EIP1193Provider | EIP1193Provider[];
+    }).ethereum;
+    if (Array.isArray(globalEthereum)) {
+      globalEthereum.forEach((provider) => addProvider(provider, "Browser wallet"));
+      return;
     }
+    if (globalEthereum) addProvider(globalEthereum, "Browser wallet");
   };
   const listener = (event: Event) => {
     const wallet = (event as CustomEvent<InjectedWallet>).detail;
@@ -100,7 +116,7 @@ export async function discoverInjectedWallets(): Promise<InjectedWallet[]> {
   await new Promise((resolve) => window.setTimeout(resolve, 300));
   window.removeEventListener("eip6963:announceProvider", listener);
 
-  return [...discovered.values()];
+  return [...discovered.values()].sort((a, b) => a.info.name.localeCompare(b.info.name));
 }
 
 function requireInjectedWallet(): EIP1193Provider {
@@ -230,6 +246,7 @@ export interface FeedSnapshot {
   roundId: number;
   isPaused: boolean;
   isStale: boolean;
+  hasPrice: boolean;
   roundStart: Date;
   /** When the open round closes (end of `roundInterval`). */
   nextRoundAt: Date;
@@ -458,6 +475,7 @@ export async function getFeed(assetId: string): Promise<FeedSnapshot | null> {
       client.readContract({ address: CHAIN_CONFIG.aggregatorAddress, abi: AGG_ABI, functionName: "feedSymbols", args: [assetId as `0x${string}`] }) as Promise<string>,
       client.readContract({ address: CHAIN_CONFIG.aggregatorAddress, abi: AGG_ABI, functionName: "feedDecimals", args: [assetId as `0x${string}`] }) as Promise<number>,
     ]);
+    const [price, updatedAt, roundId, ,] = priceData;
 
     // Field order follows the contract's `FeedHealth` struct.
     const [
@@ -477,11 +495,12 @@ export async function getFeed(assetId: string): Promise<FeedSnapshot | null> {
       assetId,
       symbol,
       decimals: Number(feedDecimals),
-      price: priceData[0],
-      updatedAt: new Date(Number(priceData[1]) * 1000),
-      roundId: Number(priceData[2]),
+      price,
+      updatedAt: new Date(Number(updatedAt) * 1000),
+      roundId: Number(roundId),
       isPaused,
       isStale,
+      hasPrice: price > 0n && updatedAt > 0n,
       roundStart: new Date(Number(roundStart) * 1000),
       nextRoundAt: new Date(Number(nextRoundAt) * 1000),
       // reports for the round currently being collected, not the last closed one

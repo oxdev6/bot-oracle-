@@ -66,13 +66,13 @@ function FeedCard({ feed }: { feed: FeedSnapshot }) {
         </div>
         {feed.isPaused ? <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-200">Paused</span> : feed.isStale ? <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-200">Stale</span> : <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-200">Live</span>}
       </div>
-      <p className="mt-6 text-4xl font-black tracking-tight text-white">{fmtPrice(feed.price, feed.decimals)}</p>
+      <p className="mt-6 text-4xl font-black tracking-tight text-white">{feed.hasPrice ? fmtPrice(feed.price, feed.decimals) : "—"}</p>
       <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
         <div><span className="block text-xs text-slate-500">Round</span>#{feed.currentRound}</div>
         <div><span className="block text-xs text-slate-500">Submissions</span>{feed.submissionsInRound}</div>
-        <div className="col-span-2"><span className="block text-xs text-slate-500">Last updated</span>{fmtTimestamp(feed.updatedAt)}</div>
+        <div className="col-span-2"><span className="block text-xs text-slate-500">Status</span>{feed.hasPrice ? `Published ${fmtTimestamp(feed.updatedAt)}` : "No published price"}</div>
       </div>
-      <p className="mt-5 text-sm font-semibold text-cyan-300 group-hover:text-cyan-200">View on explorer →</p>
+      <p className="mt-5 text-sm font-semibold text-cyan-300 group-hover:text-cyan-200">{feed.hasPrice ? "View on explorer →" : "Waiting for a valid round →"}</p>
     </a>
   );
 }
