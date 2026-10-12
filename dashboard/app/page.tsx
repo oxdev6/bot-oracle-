@@ -29,6 +29,7 @@ function shortAddr(address: string): string {
 }
 
 function flexAgo(date: Date): string {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime()) || date.getTime() <= 0) return "No data yet";
   const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
@@ -46,6 +47,13 @@ function StatusPill({ online, label }: { online: boolean; label: string }) {
   );
 }
 
+function resolveFeedStatus(feed: FeedSnapshot): "live" | "stale" | "paused" | "waiting" {
+  if (feed.isPaused) return "paused";
+  if (!feed.hasPrice) return "waiting";
+  if (feed.isStale || Date.now() - feed.updatedAt.getTime() > 60 * 60 * 1000) return "stale";
+  return "live";
+}
+
 function StatCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-[0_25px_60px_-45px_rgba(2,132,199,0.9)] backdrop-blur-xl">
@@ -57,6 +65,20 @@ function StatCard({ label, value, detail }: { label: string; value: string; deta
 }
 
 function FeedCard({ feed }: { feed: FeedSnapshot }) {
+  const status = resolveFeedStatus(feed);
+  const statusLabel = {
+    live: "Live",
+    stale: "Stale",
+    paused: "Paused",
+    waiting: "Waiting",
+  }[status];
+  const statusClass = {
+    live: "bg-emerald-500/10 text-emerald-200",
+    stale: "bg-amber-500/10 text-amber-200",
+    paused: "bg-rose-500/10 text-rose-200",
+    waiting: "bg-slate-500/10 text-slate-200",
+  }[status];
+
   return (
     <a href={feed.scannerLink} target="_blank" rel="noreferrer" className="group block rounded-3xl border border-white/10 bg-slate-950/60 p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/40 hover:bg-slate-900/80">
       <div className="flex items-start justify-between gap-4">
@@ -64,7 +86,7 @@ function FeedCard({ feed }: { feed: FeedSnapshot }) {
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Price feed</p>
           <h3 className="mt-2 text-2xl font-bold text-white">{feed.symbol}</h3>
         </div>
-        {feed.isPaused ? <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-200">Paused</span> : feed.isStale ? <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-200">Stale</span> : <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-200">Live</span>}
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${statusClass}`}>{statusLabel}</span>
       </div>
       <p className="mt-6 text-4xl font-black tracking-tight text-white">{feed.hasPrice ? fmtPrice(feed.price, feed.decimals) : "—"}</p>
       <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
@@ -72,7 +94,7 @@ function FeedCard({ feed }: { feed: FeedSnapshot }) {
         <div><span className="block text-xs text-slate-500">Submissions</span>{feed.submissionsInRound}</div>
         <div className="col-span-2"><span className="block text-xs text-slate-500">Status</span>{feed.hasPrice ? `Published ${fmtTimestamp(feed.updatedAt)}` : "No published price"}</div>
       </div>
-      <p className="mt-5 text-sm font-semibold text-cyan-300 group-hover:text-cyan-200">{feed.hasPrice ? "View on explorer →" : "Waiting for a valid round →"}</p>
+      <p className="mt-5 text-sm font-semibold text-cyan-300 group-hover:text-cyan-200">{status === "waiting" ? "Waiting for a valid round →" : status === "stale" ? "Price is stale — check health →" : "View on explorer →"}</p>
     </a>
   );
 }
@@ -190,7 +212,10 @@ export default function DashboardPage() {
   }, [load]);
 
   const symbols = useMemo(() => Object.fromEntries(feeds.map((feed) => [feed.assetId, feed.symbol])), [feeds]);
-  const activeFeeds = feeds.filter((feed) => !feed.isPaused && !feed.isStale).length;
+  const liveFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "live").length;
+  const staleFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "stale").length;
+  const waitingFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "waiting").length;
+  const pausedFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "paused").length;
   const chainLabel = CHAIN_CONFIG.chainId === 677 ? "BOT Mainnet" : CHAIN_CONFIG.chainId === 968 ? "BOT Testnet" : "Local Network";
 
   return (
@@ -241,7 +266,7 @@ export default function DashboardPage() {
             <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {token && <StatCard label="Token supply" value={`${fmtToken(token.totalSupply, token.decimals, 0)} ${token.symbol}`} detail="Fixed supply minted to treasury" />}
               {vault && <StatCard label="Total staked" value={`${fmtToken(vault.totalStake, 18, 0)} LODE`} detail="Bonded in StakingVault" />}
-              <StatCard label="Active feeds" value={String(feeds.length)} detail={`${activeFeeds} healthy and reporting`} />
+              <StatCard label="Live feeds" value={String(liveFeeds)} detail={`${staleFeeds} stale · ${waitingFeeds} waiting · ${pausedFeeds} paused`} />
               <StatCard label="Node operators" value={String(operators.length)} detail={operators.length ? "Bonded and eligible" : "No operators currently bonded"} />
             </section>
 

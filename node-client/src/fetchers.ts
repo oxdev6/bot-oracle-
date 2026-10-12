@@ -45,18 +45,45 @@ async function dispatchFetch(
 
 // ─────────────────────────── Binance ──────────────────────────────────
 
+export function candidateBases(defaultBase: string, baseUrl?: string, extras?: string): string[] {
+  const values = [baseUrl, extras]
+    .flatMap((value) => (value ? value.split(",") : []))
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...new Set(values.length ? values : [defaultBase])];
+}
+
+async function fetchJsonWithFallback(urls: string[], init: RequestInit, label: string): Promise<any> {
+  let lastError: unknown = null;
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, init);
+      if (!res.ok) {
+        throw new Error(`${label} HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`${label} fetch failed`);
+}
+
 async function fetchBinance(
   feed: FeedConfig,
   params?: Record<string, string>,
 ): Promise<Omit<PriceObservation, "source">> {
   const symbol = params?.symbol ?? feed.symbol.replace("/", "");
-  const base = params?.baseUrl ?? "https://api.binance.com";
-  const res = await fetch(`${base}/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`, {
+  const bases = candidateBases("https://api.binance.com", params?.baseUrl, params?.altBaseUrls);
+  const fallbackUrls = bases.map((base) => `${base.replace(/\/$/, "")}/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`);
+
+  const json = await fetchJsonWithFallback(fallbackUrls, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`binance ${symbol} HTTP ${res.status}`);
-  const json: any = await res.json();
+  }, `binance ${symbol}`);
+
   const price = Number(json.price);
   if (!Number.isFinite(price) || price <= 0) throw new Error(`binance ${symbol} invalid price`);
   return {
@@ -75,21 +102,22 @@ async function fetchCoinGecko(
 ): Promise<Omit<PriceObservation, "source">> {
   const id = params?.id ?? feed.symbol.split("/")[0].toLowerCase();
   const vs = params?.vs ?? "usd";
-  const base = params?.baseUrl ?? "https://api.coingecko.com/api/v3";
+  const bases = candidateBases("https://api.coingecko.com/api/v3", params?.baseUrl, params?.altBaseUrls);
   const key = params?.apiKey;
-  const url = new URL(`${base}/simple/price`);
-  url.searchParams.set("ids", id);
-  url.searchParams.set("vs_currencies", vs);
-  if (key) url.searchParams.set("x_cg_demo_api_key", key);
 
-  const res = await fetch(url, {
+  const urls = bases.map((base) => {
+    const url = new URL(`${base.replace(/\/$/, "")}/simple/price`);
+    url.searchParams.set("ids", id);
+    url.searchParams.set("vs_currencies", vs);
+    if (key) url.searchParams.set("x_cg_demo_api_key", key);
+    return url.toString();
+  });
+
+  const json = await fetchJsonWithFallback(urls, {
     headers: { Accept: "application/json", ...(key ? { "x-cg-demo-api-key": key } : {}) },
     signal: AbortSignal.timeout(10_000),
-  });
-  if (res.status === 429) throw new Error("coingecko rate-limit (429)");
-  if (res.status === 401 || res.status === 403) throw new Error(`coingecko auth required (${res.status})`);
-  if (!res.ok) throw new Error(`coingecko HTTP ${res.status}`);
-  const json: any = await res.json();
+  }, `coingecko ${id}`);
+
   const tick = json[id];
   if (!tick || typeof tick[vs] !== "number" || !Number.isFinite(tick[vs]) || tick[vs] <= 0) {
     throw new Error(`coingecko no price for "${id}"`);

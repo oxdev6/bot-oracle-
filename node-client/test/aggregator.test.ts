@@ -3,6 +3,7 @@ import type { PublicClient, WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { aggregateObservations } from "../src/aggregator";
 import { runFeedLoop } from "../src/scheduler";
+import { candidateBases } from "../src/fetchers";
 import { usdToScaled, scaledToUsd, median, deviationPct } from "../src/utils";
 import type { BotOracleConfig, FeedConfig, PriceObservation } from "../src/types";
 
@@ -42,6 +43,19 @@ describe("usdToScaled / scaledToUsd", () => {
   });
   it("round-trips", () => {
     expect(scaledToUsd(usdToScaled(1.234567891, 8), 8)).toBeCloseTo(1.23456789, 8);
+  });
+});
+
+describe("candidateBases", () => {
+  it("keeps the default public endpoint when no override is configured", () => {
+    expect(candidateBases("https://api.binance.com")).toEqual(["https://api.binance.com"]);
+    expect(candidateBases("https://api.coingecko.com/api/v3", "", "")).toEqual(["https://api.coingecko.com/api/v3"]);
+  });
+
+  it("keeps override URLs in order without duplicates", () => {
+    expect(candidateBases("https://api.binance.com", "https://api.binance.us", "https://api.binance.us")).toEqual([
+      "https://api.binance.us",
+    ]);
   });
 });
 

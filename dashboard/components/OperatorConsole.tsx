@@ -54,6 +54,19 @@ export default function OperatorConsole({
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [price, setPrice] = useState("");
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedWallet = window.localStorage.getItem("lodestar-preferred-wallet");
+    if (!storedWallet) return;
+
+    void discoverInjectedWallets().then((wallets) => {
+      const preferred = wallets.find((wallet) => wallet.info.uuid === storedWallet || wallet.info.name === storedWallet);
+      if (preferred) {
+        void connectWith(preferred);
+      }
+    }).catch(() => undefined);
+  }, []);
+
   const loadAccount = useCallback(async () => {
     if (!address) {
       setAccount(null);
@@ -123,6 +136,9 @@ export default function OperatorConsole({
       setWalletProvider(wallet.provider);
       setAddress(connectedAddress);
       setWalletChoices([]);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("lodestar-preferred-wallet", wallet.info.uuid || wallet.info.name);
+      }
       setNotice(`Connected to ${wallet.info.name} on the configured BOT network.`);
     } catch (connectError) {
       setError(friendlyError(connectError));

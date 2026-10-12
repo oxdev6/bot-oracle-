@@ -69,9 +69,35 @@ const BOT_CHAIN = defineChain({
   blockExplorers: { default: { name: "BOT Explorer", url: CHAIN_CONFIG.scannerUrl } },
 });
 
+function getBrowserWalletProviders(): EIP1193Provider[] {
+  if (typeof window === "undefined") return [];
+
+  const seen = new Set<EIP1193Provider>();
+  const providers: EIP1193Provider[] = [];
+  const globalEthereum = (window as Window & {
+    ethereum?: EIP1193Provider | EIP1193Provider[] | { providers?: EIP1193Provider[] };
+  }).ethereum;
+
+  const pushProvider = (provider: unknown) => {
+    if (!isEip1193Provider(provider) || seen.has(provider)) return;
+    seen.add(provider);
+    providers.push(provider);
+  };
+
+  if (Array.isArray(globalEthereum)) {
+    globalEthereum.forEach((provider) => pushProvider(provider));
+  } else if (globalEthereum && "providers" in globalEthereum && Array.isArray(globalEthereum.providers)) {
+    globalEthereum.providers.forEach((provider) => pushProvider(provider));
+  } else if (globalEthereum) {
+    pushProvider(globalEthereum);
+  }
+
+  return providers;
+}
+
 export function getInjectedWallet(): EIP1193Provider | null {
   if (typeof window === "undefined") return null;
-  return activeWallet ?? (window as Window & { ethereum?: EIP1193Provider }).ethereum ?? null;
+  return activeWallet ?? getBrowserWalletProviders()[0] ?? null;
 }
 
 export function setActiveWallet(provider: EIP1193Provider | null): void {
@@ -93,25 +119,21 @@ export async function discoverInjectedWallets(): Promise<InjectedWallet[]> {
       provider,
     });
   };
-  const addFallback = () => {
-    const globalEthereum = (window as Window & {
-      ethereum?: EIP1193Provider | EIP1193Provider[];
-    }).ethereum;
-    if (Array.isArray(globalEthereum)) {
-      globalEthereum.forEach((provider) => addProvider(provider, "Browser wallet"));
-      return;
-    }
-    if (globalEthereum) addProvider(globalEthereum, "Browser wallet");
-  };
+
+  const providerCandidates = getBrowserWalletProviders();
+  providerCandidates.forEach((provider) => addProvider(provider, "Browser wallet"));
+
   const listener = (event: Event) => {
-    const wallet = (event as CustomEvent<InjectedWallet>).detail;
+    const wallet = (event as CustomEvent<{ provider?: EIP1193Provider; info?: { uuid?: string; name?: string } }>).detail;
     if (wallet?.provider && wallet.info?.uuid && wallet.info.name) {
-      discovered.set(wallet.provider, wallet);
+      discovered.set(wallet.provider, {
+        info: { uuid: wallet.info.uuid, name: wallet.info.name },
+        provider: wallet.provider,
+      });
     }
   };
 
   window.addEventListener("eip6963:announceProvider", listener);
-  addFallback();
   window.dispatchEvent(new Event("eip6963:requestProvider"));
   await new Promise((resolve) => window.setTimeout(resolve, 300));
   window.removeEventListener("eip6963:announceProvider", listener);
@@ -476,6 +498,7 @@ export async function getFeed(assetId: string): Promise<FeedSnapshot | null> {
       client.readContract({ address: CHAIN_CONFIG.aggregatorAddress, abi: AGG_ABI, functionName: "feedDecimals", args: [assetId as `0x${string}`] }) as Promise<number>,
     ]);
     const [price, updatedAt, roundId, ,] = priceData;
+    const hasPrice = price > 0n && updatedAt > 0n;
 
     // Field order follows the contract's `FeedHealth` struct.
     const [
@@ -496,11 +519,11 @@ export async function getFeed(assetId: string): Promise<FeedSnapshot | null> {
       symbol,
       decimals: Number(feedDecimals),
       price,
-      updatedAt: new Date(Number(updatedAt) * 1000),
+      updatedAt: hasPrice ? new Date(Number(updatedAt) * 1000) : new Date(0),
       roundId: Number(roundId),
       isPaused,
       isStale,
-      hasPrice: price > 0n && updatedAt > 0n,
+      hasPrice,
       roundStart: new Date(Number(roundStart) * 1000),
       nextRoundAt: new Date(Number(nextRoundAt) * 1000),
       // reports for the round currently being collected, not the last closed one
@@ -617,5 +640,6 @@ export function fmtPrice(value: bigint, decimals: number): string {
 }
 
 export function fmtTimestamp(d: Date): string {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime()) || d.getTime() <= 0) return "N/A";
   return d.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
