@@ -211,6 +211,10 @@ function makeClient() {
   });
 }
 
+export async function checkRpcConnection(): Promise<void> {
+  await makeClient().getChainId();
+}
+
 const AGG_ABI = parseAbi([
   "function getLatestPrice(bytes32 assetId) view returns (int256 price, uint256 updatedAt, uint80 roundId, uint8 decimals, bool isPaused)",
   "function getFeedHealth(bytes32 assetId) view returns (bool isPaused, bool isStale, bool hasPrice, uint256 lastUpdate, uint256 lastRoundSubmissions, uint256 lastRoundVetoed, uint256 roundStart, uint256 nextRoundAt, uint256 currentRound, uint256 openRoundSubmissions)",

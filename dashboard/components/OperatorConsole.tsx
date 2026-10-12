@@ -59,11 +59,15 @@ export default function OperatorConsole({
     const storedWallet = window.localStorage.getItem("lodestar-preferred-wallet");
     if (!storedWallet) return;
 
-    void discoverInjectedWallets().then((wallets) => {
+    void discoverInjectedWallets().then(async (wallets) => {
       const preferred = wallets.find((wallet) => wallet.info.uuid === storedWallet || wallet.info.name === storedWallet);
-      if (preferred) {
-        void connectWith(preferred);
-      }
+      if (!preferred) return;
+      const accounts = await preferred.provider.request({ method: "eth_accounts" });
+      if (!Array.isArray(accounts) || typeof accounts[0] !== "string") return;
+      setActiveWallet(preferred.provider);
+      setWalletProvider(preferred.provider);
+      setAddress(accounts[0]);
+      setNotice(`Reconnected to ${preferred.info.name}.`);
     }).catch(() => undefined);
   }, []);
 

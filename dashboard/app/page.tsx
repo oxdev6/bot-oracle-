@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import OperatorConsole from "@/components/OperatorConsole";
 import {
   CHAIN_CONFIG,
+  checkRpcConnection,
   getConfigurationError,
   getFeed,
   getOperators,
@@ -189,6 +190,7 @@ export default function DashboardPage() {
     try {
       const configError = getConfigurationError();
       if (configError) throw new Error(configError);
+      await checkRpcConnection();
       const [registry, tok, vlt, ops, rds, slh] = await Promise.all([getRegistry(), getToken(), getVault(), getOperators(), getRounds(), getSlashes()]);
       setToken(tok);
       setVault(vlt);
@@ -217,6 +219,7 @@ export default function DashboardPage() {
   const waitingFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "waiting").length;
   const pausedFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "paused").length;
   const chainLabel = CHAIN_CONFIG.chainId === 677 ? "BOT Mainnet" : CHAIN_CONFIG.chainId === 968 ? "BOT Testnet" : "Local Network";
+  const chainStatus = loading ? "Checking…" : error ? "Unavailable" : "Connected";
 
   return (
     <div className="min-h-screen bg-[#040b16] text-slate-100">
@@ -239,7 +242,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <StatusPill online={true} label={`${chainLabel} · Connected`} />
+              <StatusPill online={!loading && !error} label={`${chainLabel} · ${chainStatus}`} />
               <a href={CHAIN_CONFIG.scannerUrl} target="_blank" rel="noreferrer" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300 hover:bg-cyan-400/15">View explorer</a>
               <button type="button" onClick={() => void load()} disabled={refreshing} className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-60">{refreshing ? "Refreshing…" : "Refresh"}</button>
             </div>
@@ -251,7 +254,7 @@ export default function DashboardPage() {
             <p className="text-sm font-bold uppercase tracking-[0.16em] text-rose-200">Connection required</p>
             <h2 className="mt-3 text-2xl font-black text-white">Cannot reach the on-chain oracle</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-rose-100/80">{error}</p>
-            <p className="mt-5 text-sm text-rose-100/65">Set the BOT network, RPC URL, and contract addresses in dashboard/.env.local, then refresh the page.</p>
+            <p className="mt-5 text-sm text-rose-100/65">Check the configured BOT network, RPC endpoint, and contract addresses, then retry.</p>
           </section>
         )}
 
