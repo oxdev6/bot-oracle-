@@ -85,9 +85,10 @@ Companion docs: `spec.md`, `methodology.md`, `known-limitations.md`,
       `NEXT_PUBLIC_CHAIN_ID=677`, `NEXT_PUBLIC_SCANNER_URL`,
       `NEXT_PUBLIC_TOKEN_ADDRESS`, `NEXT_PUBLIC_VAULT_ADDRESS`,
       `NEXT_PUBLIC_AGGREGATOR_ADDRESS`.
-- [ ] Set `REVALIDATE_SECRET` (Vercel env). Set `CRON_SECRET` to the same value
-      so the `dashboard/vercel.json` cron authenticates. Confirm the cron plan
-      supports sub-daily schedules (else attach an external scheduler).
+- [ ] Set `REVALIDATE_SECRET` (Vercel env) so the privileged `/api/revalidate`
+      hook is enabled for external schedulers. The dashboard refreshes its own
+      cache on demand through a same-origin Server Action — there is no Vercel
+      Cron and no background refresh.
 - [ ] Confirm the dashboard leaves demo mode and renders live mainnet data.
 
 ## 7. Monitoring & alerting

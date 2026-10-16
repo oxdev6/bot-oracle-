@@ -6,6 +6,7 @@
  * every open tab from hammering the RPC. These helpers fetch the JSON wire
  * format and rehydrate it into the richer on-chain types from `lib/client.ts`.
  */
+import { refreshDashboard } from "@/app/actions";
 import {
   deserializeFeed,
   deserializeOperator,
@@ -47,15 +48,16 @@ async function getJson<T>(url: string): Promise<{ ok: boolean; status: number; b
 /**
  * Called by the dashboard's explicit "Refresh" action.
  *
- * Historically this POSTed to `/api/revalidate` to bust the server cache. That
- * endpoint is now gated behind a server-only secret that browsers cannot hold,
- * so the client-side refresh is a soft refresh: `fetchOverview` re-reads the
- * cached API and may serve data up to one cache TTL (15–60s) old. Freshness is
- * kept current by a scheduled caller of `/api/revalidate` (see
- * `docs/ops-runbook.md`).
+ * The server caches on-chain reads indefinitely (`revalidate: false`), so a
+ * refresh has to invalidate those tags before re-reading. This invokes the
+ * same-origin `refreshDashboard` Server Action, which Next.js protects with its
+ * built-in origin check — no client-side secret required. After it resolves,
+ * the following `fetchOverview`/`fetchFeedDetail` reads recompute from chain.
+ *
+ * The dashboard never refreshes itself; this only runs on an explicit click.
  */
 export async function revalidateDashboard(): Promise<void> {
-  // Intentionally a no-op — see the doc comment above.
+  await refreshDashboard();
 }
 
 export async function fetchOverview(): Promise<DashboardData> {

@@ -45,20 +45,21 @@ Daily, weekly and pre-release checks to keep the network healthy and low-touch.
 - `node-client/src/health.ts`: probes; expose in Docker with HEALTHCHECK.
 
 ## Dashboard cache & revalidation
-- The dashboard serves cached on-chain reads (`lib/server-data.ts`); every tag
-  expires on a 15–60s TTL.
-- `POST`/`GET /api/revalidate` busts those tags immediately. It is **fail-closed**:
-  it returns `503` unless `REVALIDATE_SECRET` (or `CRON_SECRET`) is set in the
-  Vercel environment, and `401` for a wrong secret. It is also rate-limited per IP.
-- Callers authenticate with `x-revalidate-secret: <secret>` or
-  `Authorization: Bearer <secret>`. Vercel Cron sends the latter automatically
-  when `CRON_SECRET` is set. `dashboard/vercel.json` schedules a call every minute
-  (requires a Vercel plan that allows sub-daily crons; otherwise trigger it from
-  an external scheduler).
-- The dashboard's "Refresh" button is a **soft refresh** — it re-reads the cached
-  API and no longer calls this endpoint, because browsers cannot hold the secret.
-- **Rotation:** change `REVALIDATE_SECRET` (and `CRON_SECRET`) in Vercel, redeploy,
-  update any external scheduler. No contract or node changes required.
+- The dashboard serves cached on-chain reads (`lib/server-data.ts`). Cached
+  entries use `revalidate: false` — they are held indefinitely and **never
+  refresh on a timer**. There is deliberately no TTL and no Vercel Cron.
+- The dashboard's **Refresh** control calls the same-origin `refreshDashboard`
+  Server Action (`dashboard/app/actions.ts`), which invalidates every tag and
+  forces the next read to recompute from chain. Data changes only on an explicit
+  click; the dashboard never polls or refreshes itself.
+- `POST`/`GET /api/revalidate` busts the same tags for external callers
+  (operators, CI, external schedulers). It is **fail-closed**: it returns `503`
+  unless `REVALIDATE_SECRET` (or `CRON_SECRET`) is set in the environment, `401`
+  for a wrong secret, and is rate-limited per IP.
+- External callers authenticate with `x-revalidate-secret: <secret>` or
+  `Authorization: Bearer <secret>`.
+- **Rotation:** change `REVALIDATE_SECRET` (and `CRON_SECRET` if used) in Vercel,
+  redeploy, and update any external caller. No contract or node changes required.
 
 ## Secrets & safety
 - Never reuse testnet private keys on mainnet.

@@ -1,11 +1,5 @@
 {
   "framework": "nextjs",
   "cleanUrls": true,
-  "trailingSlash": false,
-  "crons": [
-    {
-      "path": "/api/revalidate",
-      "schedule": "* * * * *"
-    }
-  ]
+  "trailingSlash": false
 }

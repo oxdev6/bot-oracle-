@@ -3,13 +3,19 @@
  *
  * This is the ONLY module that should be imported by route handlers. It wraps
  * the raw on-chain readers in `lib/client.ts` with `unstable_cache` so RPC load
- * is bounded (one refresh per TTL, shared across requests) and converts every
- * result to the JSON-safe wire format in `lib/api-types.ts`.
+ * is bounded (one read shared across every request) and converts every result
+ * to the JSON-safe wire format in `lib/api-types.ts`.
+ *
+ * Cached reads use `revalidate: false`: they are cached indefinitely and only
+ * change when a tag is invalidated on demand — by the dashboard's "Refresh"
+ * control (`app/actions.ts`) or the privileged `/api/revalidate` endpoint. There
+ * is deliberately NO time-based revalidation, so the dashboard never refreshes
+ * itself in the background.
  *
  * When the deployment addresses are unset it returns clearly-flagged demo data
  * instead of failing, so the UI is always renderable.
  */
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
 import {
   CHAIN_CONFIG,
   checkRpcConnection,
@@ -47,10 +53,6 @@ import {
   type SerializedVault,
 } from "./api-types";
 
-const TOKEN_TTL = 60;
-const FEEDS_TTL = 15;
-const OPERATORS_TTL = 30;
-const LOGS_TTL = 30;
 const LOG_LIMIT = 60;
 
 /** Cache tags for on-demand revalidation (`revalidateTag`). */
@@ -62,13 +64,27 @@ export const CACHE_TAGS = {
   slashes: "lodestar:slashes",
 } as const;
 
+/**
+ * Invalidate every cached on-chain read so the next request recomputes it.
+ *
+ * This is the single entry point for "refresh" used by both the dashboard's
+ * refresh control (`app/actions.ts`, same-origin server action) and the
+ * privileged `/api/revalidate` endpoint (external schedulers/operators).
+ * `expire: 0` makes the invalidation immediate instead of background.
+ */
+export function revalidateAll(): void {
+  for (const tag of Object.values(CACHE_TAGS)) {
+    revalidateTag(tag, { expire: 0 });
+  }
+}
+
 export const getCachedToken = unstable_cache(
   async (): Promise<SerializedToken | null> => {
     const token = await getToken();
     return token ? serializeToken(token) : null;
   },
   ["lodestar-token"],
-  { revalidate: TOKEN_TTL, tags: [CACHE_TAGS.token] },
+  { revalidate: false, tags: [CACHE_TAGS.token] },
 );
 
 export const getCachedVault = unstable_cache(
@@ -77,7 +93,7 @@ export const getCachedVault = unstable_cache(
     return vault ? serializeVault(vault) : null;
   },
   ["lodestar-vault"],
-  { revalidate: TOKEN_TTL, tags: [CACHE_TAGS.token] },
+  { revalidate: false, tags: [CACHE_TAGS.token] },
 );
 
 export const getCachedFeeds = unstable_cache(
@@ -89,7 +105,7 @@ export const getCachedFeeds = unstable_cache(
       .map(serializeFeed);
   },
   ["lodestar-feeds"],
-  { revalidate: FEEDS_TTL, tags: [CACHE_TAGS.feeds] },
+  { revalidate: false, tags: [CACHE_TAGS.feeds] },
 );
 
 export const getCachedOperators = unstable_cache(
@@ -98,7 +114,7 @@ export const getCachedOperators = unstable_cache(
     return operators.map(serializeOperator);
   },
   ["lodestar-operators"],
-  { revalidate: OPERATORS_TTL, tags: [CACHE_TAGS.operators] },
+  { revalidate: false, tags: [CACHE_TAGS.operators] },
 );
 
 export const getCachedRounds = unstable_cache(
@@ -107,7 +123,7 @@ export const getCachedRounds = unstable_cache(
     return rounds.map(serializeRound);
   },
   ["lodestar-rounds"],
-  { revalidate: LOGS_TTL, tags: [CACHE_TAGS.rounds] },
+  { revalidate: false, tags: [CACHE_TAGS.rounds] },
 );
 
 export const getCachedSlashes = unstable_cache(
@@ -116,7 +132,7 @@ export const getCachedSlashes = unstable_cache(
     return slashes.map(serializeSlash);
   },
   ["lodestar-slashes"],
-  { revalidate: LOGS_TTL, tags: [CACHE_TAGS.slashes] },
+  { revalidate: false, tags: [CACHE_TAGS.slashes] },
 );
 
 export function isConfigured(): boolean {

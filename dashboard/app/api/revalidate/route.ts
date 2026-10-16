@@ -1,9 +1,10 @@
 /**
  * POST (and GET) /api/revalidate — bust the dashboard's cached on-chain reads.
  *
- * This is a privileged endpoint. The dashboard's own "Refresh" control no
- * longer calls it — a browser cannot hold a server-only secret — so it exists
- * for operators and scheduled callers (Vercel Cron, external schedulers, CI).
+ * This is the privileged, secret-gated entry point for operators, external
+ * schedulers, and CI. The dashboard's own "Refresh" control does NOT call it
+ * (a browser cannot hold a server-only secret); it uses the same-origin
+ * `refreshDashboard` Server Action instead. Both paths share `revalidateAll()`.
  *
  * Callers must present the shared secret as either:
  *   - `x-revalidate-secret: <secret>`, or
@@ -18,8 +19,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
-import { CACHE_TAGS } from "@/lib/server-data";
+import { revalidateAll } from "@/lib/server-data";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -76,9 +76,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
 
   // Immediate expiration: the next read is a blocking cache miss, so the
   // caller observes fresh on-chain data right away.
-  for (const tag of Object.values(CACHE_TAGS)) {
-    revalidateTag(tag, { expire: 0 });
-  }
+  revalidateAll();
   return NextResponse.json({ ok: true, revalidatedAt: new Date().toISOString() });
 }
 
