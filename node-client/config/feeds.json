@@ -3,15 +3,29 @@
     "symbol": "BOT/USDT",
     "feedDecimals": 8,
     "sources": [
-      { "name": "binance", "params": { "symbol": "BOTUSDT" } },
-      { "name": "coingecko", "params": { "id": "bitcoin-of-bot" } },
       {
         "name": "bdex",
         "params": {
-          "pool": "0x0000000000000000000000000000000000000000",
+          "pool": "0xD3EC267707BA234583645E75CE283Cf679dd94Fa",
           "rpcUrl": "https://rpc.bohr.life",
-          "token0Decimals": 18,
-          "token1Decimals": 6,
+          "token0Decimals": "6",
+          "token1Decimals": "18",
+          "invert": "false"
+        }
+      }
+    ]
+  },
+  {
+    "symbol": "WBOT/USDT",
+    "feedDecimals": 8,
+    "sources": [
+      {
+        "name": "bdex",
+        "params": {
+          "pool": "0xD3EC267707BA234583645E75CE283Cf679dd94Fa",
+          "rpcUrl": "https://rpc.bohr.life",
+          "token0Decimals": "6",
+          "token1Decimals": "18",
           "invert": "false"
         }
       }
@@ -20,18 +34,6 @@
   {
     "symbol": "LODE/USDT",
     "feedDecimals": 8,
-    "sources": [
-      { "name": "coingecko", "params": { "id": "lodestar" } },
-      {
-        "name": "bdex",
-        "params": {
-          "pool": "0x0000000000000000000000000000000000000000",
-          "rpcUrl": "https://rpc.bohr.life",
-          "token0Decimals": 18,
-          "token1Decimals": 6,
-          "invert": "false"
-        }
-      }
-    ]
+    "sources": []
   }
 ]
