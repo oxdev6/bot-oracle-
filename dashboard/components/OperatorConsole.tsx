@@ -22,6 +22,15 @@ import {
 const fieldClass =
   "mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50";
 
+const WALLET_LINKS = [
+  { name: "MetaMask", url: "https://metamask.io/download/" },
+  { name: "Coinbase Wallet", url: "https://www.coinbase.com/wallet/downloads" },
+  { name: "Rabby", url: "https://rabby.io/" },
+  { name: "Brave Wallet", url: "https://brave.com/wallet/" },
+  { name: "OKX Wallet", url: "https://www.okx.com/web3" },
+  { name: "Trust Wallet", url: "https://trustwallet.com/browser-extension" },
+];
+
 function friendlyError(error: unknown): string {
   if (error instanceof Error) {
     if (error.message.includes("User rejected") || error.message.includes("user rejected")) {
@@ -164,7 +173,7 @@ export default function OperatorConsole({
         await connectWith(wallets[0]);
       } else {
         setWalletChoices(wallets);
-        setNotice("Choose which installed wallet to connect.");
+        setNotice(`Found ${wallets.length} wallets. Choose one to connect.`);
       }
     } catch (connectError) {
       setError(friendlyError(connectError));
@@ -214,20 +223,39 @@ export default function OperatorConsole({
         </button>
       </div>
 
-      {walletChoices.length > 1 && (
+      {walletChoices.length > 0 && (
         <div className="mt-5 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] p-4">
           <p className="text-sm font-semibold text-white">Choose a wallet</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {walletChoices.map((wallet) => (
               <button
                 key={wallet.info.uuid}
                 type="button"
                 disabled={Boolean(busy)}
                 onClick={() => void connectWith(wallet)}
-                className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:opacity-50"
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-cyan-300/40 hover:bg-white/[0.08] hover:text-cyan-100 disabled:opacity-50"
               >
+                {wallet.info.icon ? (
+                  <img src={wallet.info.icon} alt="" className="h-6 w-6 rounded-md" />
+                ) : (
+                  <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400 to-blue-600 text-[11px] font-black text-slate-950">{wallet.info.name.slice(0, 1).toUpperCase()}</span>
+                )}
                 {wallet.info.name}
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {walletChoices.length === 0 && !address && (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+          <p className="text-sm font-semibold text-white">Popular wallets</p>
+          <p className="mt-1 text-xs text-slate-400">Install any of these, then select Connect wallet. Your keys never leave your wallet.</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+            {WALLET_LINKS.map((wallet) => (
+              <a key={wallet.name} href={wallet.url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-slate-200 transition hover:border-cyan-300/40 hover:text-cyan-100">
+                {wallet.name} ↗
+              </a>
             ))}
           </div>
         </div>

@@ -104,39 +104,71 @@ export function setActiveWallet(provider: EIP1193Provider | null): void {
   activeWallet = provider;
 }
 
+/**
+ * Best-effort display name for an injected provider that does not announce
+ * itself through EIP-6963. Every major wallet sets a distinctive boolean flag on
+ * its provider object, which lets the picker show a real name (and the right
+ * install hint) instead of a generic "Browser wallet".
+ */
+function detectProviderName(provider: EIP1193Provider): string | undefined {
+  const p = provider as EIP1193Provider & Record<string, unknown>;
+  const flags: Array<[unknown, string]> = [
+    [p.isRabby, "Rabby"],
+    [p.isCoinbaseWallet, "Coinbase Wallet"],
+    [p.isBraveWallet, "Brave Wallet"],
+    [p.isMetaMask, "MetaMask"],
+    [p.isOKXWallet ?? p.isOkxWallet, "OKX Wallet"],
+    [p.isTrust ?? p.isTrustWallet, "Trust Wallet"],
+    [p.isPhantom, "Phantom"],
+    [p.isFrame, "Frame"],
+    [p.isTokenPocket, "TokenPocket"],
+    [p.isBitKeep ?? p.isBitgetWallet, "Bitget Wallet"],
+    [p.isZerion, "Zerion"],
+    [p.isXDEFI, "XDEFI"],
+    [p.isImToken, "imToken"],
+  ];
+  return flags.find(([value]) => value === true)?.[1];
+}
+
 export async function discoverInjectedWallets(): Promise<InjectedWallet[]> {
   if (typeof window === "undefined") return [];
 
   const discovered = new Map<EIP1193Provider, InjectedWallet>();
-  const addProvider = (provider: EIP1193Provider, fallbackName: string) => {
-    if (!isEip1193Provider(provider) || discovered.has(provider)) return;
-    const info = (provider as EIP1193Provider & { isMetaMask?: boolean; isCoinbaseWallet?: boolean; isBraveWallet?: boolean; info?: { name?: string } }).info;
+  const addProvider = (provider: EIP1193Provider, announced?: { uuid?: string; name?: string; icon?: string }) => {
+    if (!isEip1193Provider(provider)) return;
+    const existing = discovered.get(provider);
+    const name = announced?.name ?? detectProviderName(provider) ?? "Injected wallet";
+    if (existing) {
+      // A later EIP-6963 announcement gives us a richer name/icon; upgrade it.
+      if (announced?.name) existing.info.name = announced.name;
+      if (announced?.icon) existing.info.icon = announced.icon;
+      if (announced?.uuid) existing.info.uuid = announced.uuid;
+      return;
+    }
     discovered.set(provider, {
       info: {
-        uuid: info?.name ? `${fallbackName}-${info.name}` : fallbackName,
-        name: info?.name ?? fallbackName,
+        uuid: announced?.uuid ?? `${name}:${provider.constructor?.name ?? "provider"}`,
+        name,
+        icon: announced?.icon,
+        rdns: (provider as EIP1193Provider & { rdns?: string }).rdns,
       },
       provider,
     });
   };
 
-  const providerCandidates = getBrowserWalletProviders();
-  providerCandidates.forEach((provider) => addProvider(provider, "Browser wallet"));
-
   const listener = (event: Event) => {
-    const wallet = (event as CustomEvent<{ provider?: EIP1193Provider; info?: { uuid?: string; name?: string } }>).detail;
-    if (wallet?.provider && wallet.info?.uuid && wallet.info.name) {
-      discovered.set(wallet.provider, {
-        info: { uuid: wallet.info.uuid, name: wallet.info.name },
-        provider: wallet.provider,
-      });
-    }
+    const wallet = (event as CustomEvent<{ provider?: EIP1193Provider; info?: { uuid?: string; name?: string; icon?: string } }>).detail;
+    if (wallet?.provider) addProvider(wallet.provider, wallet.info);
   };
 
   window.addEventListener("eip6963:announceProvider", listener);
   window.dispatchEvent(new Event("eip6963:requestProvider"));
-  await new Promise((resolve) => window.setTimeout(resolve, 300));
+  await new Promise((resolve) => window.setTimeout(resolve, 350));
   window.removeEventListener("eip6963:announceProvider", listener);
+
+  // Legacy `window.ethereum` providers (single or multi) for wallets that do not
+  // implement EIP-6963 yet.
+  getBrowserWalletProviders().forEach((provider) => addProvider(provider));
 
   return [...discovered.values()].sort((a, b) => a.info.name.localeCompare(b.info.name));
 }

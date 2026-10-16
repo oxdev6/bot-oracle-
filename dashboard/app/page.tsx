@@ -1,18 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import OperatorConsole from "@/components/OperatorConsole";
 import {
   CHAIN_CONFIG,
-  checkRpcConnection,
-  getConfigurationError,
-  getFeed,
-  getOperators,
-  getRegistry,
-  getRounds,
-  getSlashes,
-  getToken,
-  getVault,
   fmtPrice,
   fmtToken,
   fmtTimestamp,
@@ -23,6 +15,7 @@ import {
   type TokenSnapshot,
   type VaultSnapshot,
 } from "@/lib/client";
+import { fetchOverview, revalidateDashboard } from "@/lib/api";
 
 function shortAddr(address: string): string {
   if (!address) return "—";
@@ -41,8 +34,8 @@ function flexAgo(date: Date): string {
 
 function StatusPill({ online, label }: { online: boolean; label: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${online ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200" : "border-amber-400/25 bg-amber-500/10 text-amber-200"}`}>
-      <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" : "bg-amber-400"}`} />
+    <span role="status" className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${online ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200" : "border-amber-400/25 bg-amber-500/10 text-amber-200"}`}>
+      <span aria-hidden className={`h-2 w-2 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" : "bg-amber-400"}`} />
       {label}
     </span>
   );
@@ -67,12 +60,7 @@ function StatCard({ label, value, detail }: { label: string; value: string; deta
 
 function FeedCard({ feed }: { feed: FeedSnapshot }) {
   const status = resolveFeedStatus(feed);
-  const statusLabel = {
-    live: "Live",
-    stale: "Stale",
-    paused: "Paused",
-    waiting: "Waiting",
-  }[status];
+  const statusLabel = { live: "Live", stale: "Stale", paused: "Paused", waiting: "Waiting" }[status];
   const statusClass = {
     live: "bg-emerald-500/10 text-emerald-200",
     stale: "bg-amber-500/10 text-amber-200",
@@ -81,7 +69,7 @@ function FeedCard({ feed }: { feed: FeedSnapshot }) {
   }[status];
 
   return (
-    <a href={feed.scannerLink} target="_blank" rel="noreferrer" className="group block rounded-3xl border border-white/10 bg-slate-950/60 p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/40 hover:bg-slate-900/80">
+    <article className="group flex flex-col rounded-3xl border border-white/10 bg-slate-950/60 p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-400/40 hover:bg-slate-900/80">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Price feed</p>
@@ -95,8 +83,15 @@ function FeedCard({ feed }: { feed: FeedSnapshot }) {
         <div><span className="block text-xs text-slate-500">Submissions</span>{feed.submissionsInRound}</div>
         <div className="col-span-2"><span className="block text-xs text-slate-500">Status</span>{feed.hasPrice ? `Published ${fmtTimestamp(feed.updatedAt)}` : "No published price"}</div>
       </div>
-      <p className="mt-5 text-sm font-semibold text-cyan-300 group-hover:text-cyan-200">{status === "waiting" ? "Waiting for a valid round →" : status === "stale" ? "Price is stale — check health →" : "View on explorer →"}</p>
-    </a>
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/5 pt-4">
+        <Link href={`/feeds/${feed.assetId}`} className="text-sm font-semibold text-cyan-300 hover:text-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
+          {status === "waiting" ? "Awaiting first round →" : "Feed details & history →"}
+        </Link>
+        <a href={feed.scannerLink} target="_blank" rel="noreferrer" className="text-xs font-medium text-slate-500 hover:text-slate-300">
+          Explorer ↗
+        </a>
+      </div>
+    </article>
   );
 }
 
@@ -114,8 +109,9 @@ function OperatorsTable({ operators }: { operators: OperatorRow[] }) {
   return (
     <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/50">
       <table className="w-full text-left text-sm">
+        <caption className="sr-only">Bonded operators and their stake</caption>
         <thead className="bg-white/[0.03] text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-          <tr><th className="px-5 py-4">Operator</th><th className="px-5 py-4">Stake</th><th className="px-5 py-4">Status</th></tr>
+          <tr><th scope="col" className="px-5 py-4">Operator</th><th scope="col" className="px-5 py-4">Stake</th><th scope="col" className="px-5 py-4">Status</th></tr>
         </thead>
         <tbody>
           {operators.map((operator) => (
@@ -137,7 +133,8 @@ function RecentRounds({ rounds, symbols }: { rounds: RoundRow[]; symbols: Record
     <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/50">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-white/[0.03] text-xs font-bold uppercase tracking-[0.14em] text-slate-400"><tr><th className="px-5 py-4">Feed</th><th className="px-5 py-4">Price</th><th className="px-5 py-4">Accepted</th><th className="px-5 py-4">Vetoed</th><th className="px-5 py-4">Closed</th></tr></thead>
+          <caption className="sr-only">Most recently closed rounds across all feeds</caption>
+          <thead className="bg-white/[0.03] text-xs font-bold uppercase tracking-[0.14em] text-slate-400"><tr><th scope="col" className="px-5 py-4">Feed</th><th scope="col" className="px-5 py-4">Price</th><th scope="col" className="px-5 py-4">Accepted</th><th scope="col" className="px-5 py-4">Vetoed</th><th scope="col" className="px-5 py-4">Closed</th></tr></thead>
           <tbody>{rounds.map((round) => (
             <tr key={`${round.assetId}-${round.roundId}`} className="border-t border-white/5 hover:bg-white/[0.03]">
               <td className="px-5 py-4 font-semibold text-white">{symbols[round.assetId] ?? shortAddr(round.assetId)}</td>
@@ -158,7 +155,8 @@ function SlashHistory({ slashes }: { slashes: SlashRow[] }) {
     <div className="overflow-hidden rounded-3xl border border-rose-500/15 bg-slate-950/50">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-left text-sm">
-          <thead className="bg-rose-500/[0.04] text-xs font-bold uppercase tracking-[0.14em] text-rose-200/70"><tr><th className="px-5 py-4">Operator</th><th className="px-5 py-4">Amount</th><th className="px-5 py-4">Reason</th><th className="px-5 py-4">Time</th></tr></thead>
+          <caption className="sr-only">Recent slashing events</caption>
+          <thead className="bg-rose-500/[0.04] text-xs font-bold uppercase tracking-[0.14em] text-rose-200/70"><tr><th scope="col" className="px-5 py-4">Operator</th><th scope="col" className="px-5 py-4">Amount</th><th scope="col" className="px-5 py-4">Reason</th><th scope="col" className="px-5 py-4">Time</th></tr></thead>
           <tbody>{slashes.map((slash) => (
             <tr key={`${slash.operator}-${slash.txHash}`} className="border-t border-rose-500/10 hover:bg-rose-500/[0.03]">
               <td className="px-5 py-4 font-mono text-xs text-rose-300">{shortAddr(slash.operator)}</td>
@@ -172,6 +170,14 @@ function SlashHistory({ slashes }: { slashes: SlashRow[] }) {
   );
 }
 
+const NAV_LINKS = [
+  { href: "#console", label: "Operator console" },
+  { href: "#feeds", label: "Feeds" },
+  { href: "#operators", label: "Operators" },
+  { href: "#security", label: "Security" },
+  { href: "#rounds", label: "Rounds" },
+];
+
 export default function DashboardPage() {
   const [feeds, setFeeds] = useState<FeedSnapshot[]>([]);
   const [token, setToken] = useState<TokenSnapshot | null>(null);
@@ -181,23 +187,25 @@ export default function DashboardPage() {
   const [slashes, setSlashes] = useState<SlashRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [demo, setDemo] = useState(false);
+  const [demoReason, setDemoReason] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setRefreshing(true);
     setError(null);
     try {
-      const configError = getConfigurationError();
-      if (configError) throw new Error(configError);
-      await checkRpcConnection();
-      const [registry, tok, vlt, ops, rds, slh] = await Promise.all([getRegistry(), getToken(), getVault(), getOperators(), getRounds(), getSlashes()]);
-      setToken(tok);
-      setVault(vlt);
-      setOperators(ops);
-      setRounds(rds);
-      setSlashes(slh);
-      setFeeds((await Promise.all(registry.map(getFeed))).filter((feed): feed is FeedSnapshot => Boolean(feed)));
+      if (force) await revalidateDashboard();
+      const data = await fetchOverview();
+      setToken(data.token);
+      setVault(data.vault);
+      setOperators(data.operators);
+      setRounds(data.rounds);
+      setSlashes(data.slashes);
+      setFeeds(data.feeds);
+      setDemo(data.demo);
+      setDemoReason(data.configError ?? null);
       setLastUpdated(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "The dashboard could not load on-chain data.");
@@ -209,8 +217,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     void load();
-    const interval = setInterval(() => void load(), 30_000);
-    return () => clearInterval(interval);
   }, [load]);
 
   const symbols = useMemo(() => Object.fromEntries(feeds.map((feed) => [feed.assetId, feed.symbol])), [feeds]);
@@ -219,22 +225,26 @@ export default function DashboardPage() {
   const waitingFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "waiting").length;
   const pausedFeeds = feeds.filter((feed) => resolveFeedStatus(feed) === "paused").length;
   const chainLabel = CHAIN_CONFIG.chainId === 677 ? "BOT Mainnet" : CHAIN_CONFIG.chainId === 968 ? "BOT Testnet" : "Local Network";
-  const chainStatus = loading ? "Checking…" : error ? "Unavailable" : "Connected";
+  const chainStatus = loading ? "Checking…" : error ? "Unavailable" : demo ? "Demo data" : "Connected";
 
   return (
     <div className="min-h-screen bg-[#040b16] text-slate-100">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-950">
+        Skip to content
+      </a>
+
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-24 top-0 h-96 w-96 rounded-full bg-cyan-500/10 blur-3xl" />
         <div className="absolute right-0 top-32 h-[30rem] w-[30rem] rounded-full bg-blue-500/10 blur-3xl" />
         <div className="absolute -bottom-20 left-1/3 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <main className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <main id="main" className="relative mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <header className="relative overflow-hidden rounded-[28px] border border-cyan-400/15 bg-slate-950/80 px-5 py-5 shadow-[0_40px_100px_-60px_rgba(6,182,212,0.9)] backdrop-blur-2xl sm:px-7">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400 to-transparent" />
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-700 text-xl font-black text-slate-950">L</div>
+              <div aria-hidden className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-700 text-xl font-black text-slate-950">L</div>
               <div>
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.25em] text-cyan-300">Lodestar Oracle</p>
                 <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">Protocol Intelligence</h1>
@@ -242,14 +252,31 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <StatusPill online={!loading && !error} label={`${chainLabel} · ${chainStatus}`} />
+              <StatusPill online={!loading && !error && !demo} label={`${chainLabel} · ${chainStatus}`} />
               <a href={CHAIN_CONFIG.scannerUrl} target="_blank" rel="noreferrer" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300 hover:bg-cyan-400/15">View explorer</a>
-              <button type="button" onClick={() => void load()} disabled={refreshing} className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-60">{refreshing ? "Refreshing…" : "Refresh"}</button>
+              <button type="button" onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing} className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-60">{refreshing ? "Refreshing…" : "Refresh"}</button>
             </div>
           </div>
+          <nav aria-label="Dashboard sections" className="mt-5 flex flex-wrap gap-2 border-t border-white/5 pt-4">
+            {NAV_LINKS.map((link) => (
+              <a key={link.href} href={link.href} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/5 hover:text-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
+                {link.label}
+              </a>
+            ))}
+          </nav>
         </header>
 
-        {error && (
+        {demo && (
+          <section className="mt-8 rounded-3xl border border-amber-400/25 bg-amber-400/10 p-6" role="status">
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-200">Demo data</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-100/80">
+              This deployment has no contract addresses configured{demoReason ? ` (${demoReason})` : ""}, so the dashboard is showing synthetic data.
+              Set <code className="rounded bg-black/20 px-1">NEXT_PUBLIC_TOKEN_ADDRESS</code>, <code className="rounded bg-black/20 px-1">NEXT_PUBLIC_VAULT_ADDRESS</code> and <code className="rounded bg-black/20 px-1">NEXT_PUBLIC_AGGREGATOR_ADDRESS</code> to display live on-chain data.
+            </p>
+          </section>
+        )}
+
+        {error && !demo && (
           <section className="mt-8 rounded-3xl border border-rose-500/20 bg-rose-500/10 p-6 sm:p-8" role="alert">
             <p className="text-sm font-bold uppercase tracking-[0.16em] text-rose-200">Connection required</p>
             <h2 className="mt-3 text-2xl font-black text-white">Cannot reach the on-chain oracle</h2>
@@ -261,7 +288,7 @@ export default function DashboardPage() {
         {!error && lastUpdated && <p className="mt-5 text-right text-xs font-medium text-slate-500">Updated {fmtTimestamp(lastUpdated)}</p>}
 
         {loading ? (
-          <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-hidden>
             {[1, 2, 3, 4].map((index) => <div key={index} className="h-36 animate-pulse rounded-3xl border border-white/10 bg-white/[0.04]" />)}
           </section>
         ) : !error && (
@@ -273,25 +300,32 @@ export default function DashboardPage() {
               <StatCard label="Node operators" value={String(operators.length)} detail={operators.length ? "Bonded and eligible" : "No operators currently bonded"} />
             </section>
 
-            <OperatorConsole feeds={feeds} tokenDecimals={token?.decimals ?? 18} onRefresh={load} />
+            <div id="console" className="scroll-mt-6">
+              <OperatorConsole feeds={feeds} tokenDecimals={token?.decimals ?? 18} onRefresh={() => load(true)} />
+            </div>
 
-            <section className="mt-10">
+            <section id="feeds" className="mt-10 scroll-mt-6">
               <div className="mb-4 flex items-end justify-between gap-4"><div><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Oracle feeds</p><h2 className="mt-2 text-2xl font-black text-white">Price data</h2></div><p className="text-sm text-slate-500">{feeds.length} registered feed{feeds.length === 1 ? "" : "s"}</p></div>
+              {feeds.length > 0 && waitingFeeds === feeds.length && (
+                <div className="mb-4 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] px-5 py-4 text-sm leading-6 text-cyan-100/85" role="status">
+                  These feeds are registered on-chain but no price round has closed yet. Prices appear automatically once operators submit and the round is accepted (every {Math.round(120)}s). You can also report a price yourself from the Operator console above.
+                </div>
+              )}
               {feeds.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{feeds.map((feed) => <FeedCard key={feed.assetId} feed={feed} />)}</div> : <EmptyState title="No feeds registered" description="The OracleAggregator has no asset feeds configured yet." />}
             </section>
 
             <section className="mt-12 grid gap-8 lg:grid-cols-2">
-              <div><div className="mb-4"><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Operators</p><h2 className="mt-2 text-2xl font-black text-white">Bonded network</h2></div><OperatorsTable operators={operators} /></div>
-              <div><div className="mb-4"><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Security</p><h2 className="mt-2 text-2xl font-black text-white">Slashing activity</h2></div><SlashHistory slashes={slashes} /></div>
+              <div id="operators" className="scroll-mt-6"><div className="mb-4"><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Operators</p><h2 className="mt-2 text-2xl font-black text-white">Bonded network</h2></div><OperatorsTable operators={operators} /></div>
+              <div id="security" className="scroll-mt-6"><div className="mb-4"><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Security</p><h2 className="mt-2 text-2xl font-black text-white">Slashing activity</h2></div><SlashHistory slashes={slashes} /></div>
             </section>
 
-            <section className="mt-12"><div className="mb-4"><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Audit trail</p><h2 className="mt-2 text-2xl font-black text-white">Recent closed rounds</h2></div><RecentRounds rounds={rounds} symbols={symbols} /></section>
+            <section id="rounds" className="mt-12 scroll-mt-6"><div className="mb-4"><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Audit trail</p><h2 className="mt-2 text-2xl font-black text-white">Recent closed rounds</h2></div><RecentRounds rounds={rounds} symbols={symbols} /></section>
           </>
         )}
 
         <footer className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-xs text-slate-500 sm:flex-row">
-          <p>Lodestar Oracle · {chainLabel} · Chain #{CHAIN_CONFIG.chainId}</p>
-          <p>Protocol data is read directly from the BOT chain.</p>
+          <p>Lodestar Oracle · {chainLabel} · Chain #{CHAIN_CONFIG.chainId}{demo ? " · demo mode" : ""}</p>
+          <p>Protocol data is served by the cached dashboard API.</p>
         </footer>
       </main>
     </div>
