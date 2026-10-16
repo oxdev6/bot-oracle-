@@ -21,6 +21,8 @@ coverage/
 coverage.json
 .next/
 out-tsc/
+*.tsbuildinfo
+
 
 # Foundry (if used locally)
 foundry-out/
