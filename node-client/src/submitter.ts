@@ -28,14 +28,22 @@ export function createSubmitter(opts: {
   ): Promise<{ hash: `0x${string}` }> {
     const wallet = opts.wallet;
     if (!wallet || !opts.account) throw new Error("no operator wallet configured");
-    const hash = await wallet.writeContract({
-      chain: defineBotChain(opts.chain.chainId, opts.chain.rpcUrl),
+    const chain = defineBotChain(opts.chain.chainId, opts.chain.rpcUrl);
+    const sourceTimestamp = BigInt(Math.floor(Date.now() / 1000));
+
+    // Preflight: simulate before sending so a predictable revert (not eligible,
+    // already submitted, outlier, paused feed) is surfaced with its reason
+    // instead of costing gas on a failed transaction.
+    const { request } = await publicClient.simulateContract({
+      chain,
       address: aggregator,
       abi: aggregatorAbi,
       functionName: "submitPrice",
-      args: [assetId, price, BigInt(Math.floor(Date.now() / 1000))],
+      args: [assetId, price, sourceTimestamp],
       account: opts.account,
     });
+
+    const hash = await wallet.writeContract(request);
     return { hash };
   }
 

@@ -1,6 +1,7 @@
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { ChainConfig } from "./types";
+import { buildTransport } from "./rpc";
 
 /**
  * Minimal select BOT Chain chains. If the RPC disagrees with these IDs the
@@ -19,7 +20,7 @@ export function defineBotChain(chainId: number, rpcUrl: string) {
 export function makePublicClient(chain: ChainConfig) {
   return createPublicClient({
     chain: defineBotChain(chain.chainId, chain.rpcUrl),
-    transport: http(chain.rpcUrl, { timeout: 15_000, retryCount: 2 }),
+    transport: buildTransport(chain.rpcUrl, chain.fallbackRpcUrls),
   });
 }
 
@@ -30,7 +31,7 @@ export function makeWalletClient(chain: ChainConfig, privateKey: string) {
     client: createWalletClient({
       account,
       chain: defineBotChain(chain.chainId, chain.rpcUrl),
-      transport: http(chain.rpcUrl, { timeout: 15_000, retryCount: 2 }),
+      transport: buildTransport(chain.rpcUrl, chain.fallbackRpcUrls),
     }),
   };
 }

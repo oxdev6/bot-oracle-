@@ -29,9 +29,28 @@ export interface FeedConfig {
 
 export interface ChainConfig {
   rpcUrl: string;
+  /**
+   * Additional RPC endpoints tried in order when the primary fails. viem's
+   * fallback transport rotates between them, so one dead provider does not
+   * take the whole node offline. Optional for backwards compatibility.
+   */
+  fallbackRpcUrls?: string[];
   chainId: number;
   aggregator: string;
   scannerUrl: string;
+}
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export interface RuntimeConfig {
+  logLevel: LogLevel;
+  logFormat: "json" | "pretty";
+  /** Serve /healthz, /readyz, /metrics and /status on `healthPort`. */
+  healthEnabled: boolean;
+  healthPort: number;
+  /** Wait this fraction of the remaining round window before retrying after
+   *  a failed round. 0 = retry immediately, 1 = wait until the round closes. */
+  retryBackoffFraction: number;
 }
 
 export interface OperatorConfig {
@@ -47,6 +66,20 @@ export interface BotOracleConfig {
   chain: ChainConfig;
   operator: OperatorConfig;
   feeds: FeedConfig[];
+  /** Logging / health-server settings. Optional so test configs stay minimal. */
+  runtime?: RuntimeConfig;
+}
+
+/** Live per-feed stats surfaced by the health/metrics endpoint. */
+export interface FeedRuntimeState {
+  symbol: string;
+  assetId: string;
+  submissions: number;
+  consecutiveErrors: number;
+  lastError?: string;
+  /** ISO timestamp of the last successful submission. */
+  lastRoundAt?: string;
+  lastMedianUsd?: number;
 }
 
 export interface PriceObservation {
