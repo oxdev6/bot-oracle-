@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#040b16] text-slate-100">{children}</body>
+      <body className="min-h-screen text-slate-100">{children}</body>
     </html>
   );
 }

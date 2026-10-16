@@ -1,6 +1,10 @@
+"use client";
+
+import { useId } from "react";
+
 /**
- * Minimal dependency-free SVG sparkline. Renders a single polyline scaled to
- * its own min/max, so it works for any magnitude of price without axes.
+ * Minimal dependency-free SVG sparkline with a soft area fill. Colors come from
+ * `currentColor`, so callers control the trend color with a Tailwind text class.
  */
 export default function Sparkline({
   values,
@@ -11,6 +15,7 @@ export default function Sparkline({
   className?: string;
   ariaLabel?: string;
 }) {
+  const gradientId = useId().replace(/[:]/g, "");
   const finite = values.filter((value) => Number.isFinite(value));
   if (finite.length < 2) {
     return <div className={`flex h-10 items-center justify-center text-xs text-slate-600 ${className ?? ""}`}>Not enough data</div>;
@@ -28,8 +33,8 @@ export default function Sparkline({
     const y = height - pad - ((value - min) / span) * (height - pad * 2);
     return [x, y] as const;
   });
-  const path = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
-  const rising = finite[finite.length - 1] >= finite[0];
+  const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+  const area = `${line} L${points[points.length - 1][0].toFixed(2)},${height} L${points[0][0].toFixed(2)},${height} Z`;
 
   return (
     <svg
@@ -39,11 +44,18 @@ export default function Sparkline({
       role="img"
       aria-label={ariaLabel}
     >
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gradientId})`} stroke="none" />
       <path
-        d={path}
+        d={line}
         fill="none"
-        stroke={rising ? "#34d399" : "#fb7185"}
-        strokeWidth="1.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
         strokeLinejoin="round"
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"

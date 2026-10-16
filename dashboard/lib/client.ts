@@ -112,20 +112,38 @@ export function setActiveWallet(provider: EIP1193Provider | null): void {
  */
 function detectProviderName(provider: EIP1193Provider): string | undefined {
   const p = provider as EIP1193Provider & Record<string, unknown>;
+  // More specific wallets first: several of them also set `isMetaMask`, so a
+  // MetaMask-first order would mislabel them.
   const flags: Array<[unknown, string]> = [
     [p.isRabby, "Rabby"],
     [p.isCoinbaseWallet, "Coinbase Wallet"],
     [p.isBraveWallet, "Brave Wallet"],
-    [p.isMetaMask, "MetaMask"],
-    [p.isOKXWallet ?? p.isOkxWallet, "OKX Wallet"],
-    [p.isTrust ?? p.isTrustWallet, "Trust Wallet"],
     [p.isPhantom, "Phantom"],
-    [p.isFrame, "Frame"],
-    [p.isTokenPocket, "TokenPocket"],
+    [p.isOKXWallet ?? p.isOkxWallet, "OKX Wallet"],
     [p.isBitKeep ?? p.isBitgetWallet, "Bitget Wallet"],
+    [p.isTrust ?? p.isTrustWallet, "Trust Wallet"],
+    [p.isTokenPocket, "TokenPocket"],
+    [p.isEnkrypt, "Enkrypt"],
+    [p.isRainbow, "Rainbow"],
+    [p.isSafePal, "SafePal"],
+    [p.isOneKey, "OneKey"],
+    [p.isMathWallet, "MathWallet"],
+    [p.isCoin98, "Coin98"],
+    [p.isCore ?? p.isCoreWallet, "Core"],
+    [p.isZeal, "Zeal"],
+    [p.isFoxWallet, "FoxWallet"],
+    [p.isKrystal, "Krystal"],
+    [p.isTalisman, "Talisman"],
+    [p.isLiquality, "Liquality"],
+    [p.isClover, "Clover"],
+    [p.isDapper, "Dapper"],
+    [p.isExodus, "Exodus"],
+    [p.isNightly, "Nightly"],
+    [p.isFrame, "Frame"],
     [p.isZerion, "Zerion"],
     [p.isXDEFI, "XDEFI"],
     [p.isImToken, "imToken"],
+    [p.isMetaMask, "MetaMask"],
   ];
   return flags.find(([value]) => value === true)?.[1];
 }

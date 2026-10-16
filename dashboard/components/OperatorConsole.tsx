@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, parseUnits, type Address, type EIP1193Provider } from "viem";
+import { Badge } from "@/components/ui";
+import { AlertIcon, BoltIcon, ClockIcon, CoinsIcon, ExternalLinkIcon, ShieldIcon, WalletIcon } from "@/components/icons";
 import {
   CHAIN_CONFIG,
   claimLodeWithdrawal,
@@ -19,16 +21,30 @@ import {
   type OperatorAccount,
 } from "@/lib/client";
 
-const fieldClass =
-  "mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50";
+const fieldClass = "field mt-2";
 
-const WALLET_LINKS = [
-  { name: "MetaMask", url: "https://metamask.io/download/" },
-  { name: "Coinbase Wallet", url: "https://www.coinbase.com/wallet/downloads" },
-  { name: "Rabby", url: "https://rabby.io/" },
-  { name: "Brave Wallet", url: "https://brave.com/wallet/" },
-  { name: "OKX Wallet", url: "https://www.okx.com/web3" },
-  { name: "Trust Wallet", url: "https://trustwallet.com/browser-extension" },
+/** Curated, broad wallet directory for the install/connect hints. */
+const WALLET_LINKS: Array<{ name: string; url: string; tag: string }> = [
+  { name: "MetaMask", url: "https://metamask.io/download/", tag: "Extension · Mobile" },
+  { name: "Coinbase Wallet", url: "https://www.coinbase.com/wallet/downloads", tag: "Extension · Mobile" },
+  { name: "Rabby", url: "https://rabby.io/", tag: "Extension" },
+  { name: "Brave Wallet", url: "https://brave.com/wallet/", tag: "Built-in" },
+  { name: "OKX Wallet", url: "https://www.okx.com/web3", tag: "Extension · Mobile" },
+  { name: "Trust Wallet", url: "https://trustwallet.com/browser-extension", tag: "Extension · Mobile" },
+  { name: "Rainbow", url: "https://rainbow.me/", tag: "Extension · Mobile" },
+  { name: "Phantom", url: "https://phantom.com/", tag: "Extension · Mobile" },
+  { name: "Enkrypt", url: "https://www.enkrypt.com/", tag: "Extension" },
+  { name: "OneKey", url: "https://onekey.so/", tag: "Extension · Mobile" },
+  { name: "Bitget Wallet", url: "https://web3.bitget.com/", tag: "Extension · Mobile" },
+  { name: "SafePal", url: "https://www.safepal.com/", tag: "Extension · Mobile" },
+  { name: "TokenPocket", url: "https://www.tokenpocket.pro/", tag: "Extension · Mobile" },
+  { name: "MathWallet", url: "https://mathwallet.org/", tag: "Extension · Mobile" },
+  { name: "Core", url: "https://core.app/", tag: "Extension · Mobile" },
+  { name: "Coin98", url: "https://coin98.com/wallet", tag: "Extension · Mobile" },
+  { name: "Zerion", url: "https://zerion.io/", tag: "Mobile" },
+  { name: "Frame", url: "https://frame.sh/", tag: "Desktop" },
+  { name: "imToken", url: "https://token.im/", tag: "Mobile" },
+  { name: "FoxWallet", url: "https://foxwallet.com/", tag: "Mobile" },
 ];
 
 function friendlyError(error: unknown): string {
@@ -39,6 +55,15 @@ function friendlyError(error: unknown): string {
     return error.message;
   }
   return "The transaction failed. Check your wallet and try again.";
+}
+
+function MetricTile({ label, value, tone = "idle" }: { label: string; value: string; tone?: "idle" | "live" | "warn" }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className={`mt-2 font-bold tnum ${tone === "live" ? "text-emerald-300" : tone === "warn" ? "text-amber-200" : "text-white"}`}>{value}</p>
+    </div>
+  );
 }
 
 export default function OperatorConsole({
@@ -167,7 +192,7 @@ export default function OperatorConsole({
     try {
       const wallets = await discoverInjectedWallets();
       if (wallets.length === 0) {
-        setError("No browser wallet is available in this browser. Install a wallet extension, or open this dashboard in your wallet's browser, then select Connect wallet again.");
+        setError("No browser wallet detected. Install any wallet below, or open this dashboard inside your wallet's in-app browser, then select Connect wallet again.");
         setWalletChoices([]);
       } else if (wallets.length === 1) {
         await connectWith(wallets[0]);
@@ -204,27 +229,31 @@ export default function OperatorConsole({
   }
 
   return (
-    <section className="mt-12 rounded-3xl border border-cyan-400/15 bg-slate-950/70 p-5 shadow-[0_30px_80px_-55px_rgba(34,211,238,0.8)] sm:p-7">
+    <section className="card relative overflow-hidden p-5 shadow-glow sm:p-7">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">Operator console</p>
-          <h2 className="mt-2 text-2xl font-black text-white">Manage your node on-chain</h2>
+          <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-300">
+            <WalletIcon className="h-4 w-4" /> Operator console
+          </p>
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Manage your node on-chain</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-            Stake LODE, manage the 7-day withdrawal queue, and report prices directly to the aggregator.
+            Stake LODE, manage the 7-day withdrawal queue, and report prices directly to the aggregator — with any EVM wallet.
           </p>
         </div>
         <button
           type="button"
           onClick={() => void connect()}
           disabled={Boolean(busy)}
-          className="shrink-0 rounded-xl bg-cyan-300 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-60"
+          className="btn-primary shrink-0"
         >
-          {busy || (address ? `${address.slice(0, 6)}…${address.slice(-4)} · Change wallet` : "Connect wallet")}
+          <WalletIcon className="h-4 w-4" />
+          {busy || (address ? `${address.slice(0, 6)}…${address.slice(-4)} · Change` : "Connect wallet")}
         </button>
       </div>
 
       {walletChoices.length > 0 && (
-        <div className="mt-5 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] p-4">
+        <div className="mt-5 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-4">
           <p className="text-sm font-semibold text-white">Choose a wallet</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {walletChoices.map((wallet) => (
@@ -233,12 +262,13 @@ export default function OperatorConsole({
                 type="button"
                 disabled={Boolean(busy)}
                 onClick={() => void connectWith(wallet)}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-cyan-300/40 hover:bg-white/[0.08] hover:text-cyan-100 disabled:opacity-50"
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-cyan-300/50 hover:bg-white/[0.09] hover:text-cyan-100 disabled:opacity-50"
               >
                 {wallet.info.icon ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={wallet.info.icon} alt="" className="h-6 w-6 rounded-md" />
                 ) : (
-                  <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400 to-blue-600 text-[11px] font-black text-slate-950">{wallet.info.name.slice(0, 1).toUpperCase()}</span>
+                  <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-gradient text-[11px] font-black text-slate-950">{wallet.info.name.slice(0, 1).toUpperCase()}</span>
                 )}
                 {wallet.info.name}
               </button>
@@ -249,12 +279,25 @@ export default function OperatorConsole({
 
       {walletChoices.length === 0 && !address && (
         <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-          <p className="text-sm font-semibold text-white">Popular wallets</p>
-          <p className="mt-1 text-xs text-slate-400">Install any of these, then select Connect wallet. Your keys never leave your wallet.</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-white">Supported wallets</p>
+            <Badge tone="idle">{WALLET_LINKS.length} wallets</Badge>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Install any of these (or use your wallet&apos;s in-app browser), then select Connect wallet. Your keys never leave your wallet.</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {WALLET_LINKS.map((wallet) => (
-              <a key={wallet.name} href={wallet.url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-slate-200 transition hover:border-cyan-300/40 hover:text-cyan-100">
-                {wallet.name} ↗
+              <a
+                key={wallet.name}
+                href={wallet.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 text-sm font-semibold text-slate-200 transition hover:border-cyan-300/40 hover:bg-white/[0.07] hover:text-cyan-100"
+              >
+                <span className="flex flex-col">
+                  <span>{wallet.name}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{wallet.tag}</span>
+                </span>
+                <ExternalLinkIcon className="h-3.5 w-3.5 text-slate-500 transition group-hover:text-cyan-300" />
               </a>
             ))}
           </div>
@@ -262,33 +305,24 @@ export default function OperatorConsole({
       )}
 
       {!address ? (
-        <div className="mt-6 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5 text-sm leading-6 text-slate-400">
-          Connect an injected EVM wallet to see your LODE balance, stake, and withdrawal requests. Transactions are signed by your wallet; the dashboard never asks for a private key.
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5 text-sm leading-6 text-slate-400">
+          <ShieldIcon className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300/80" />
+          <p>
+            Connect an injected EVM wallet to see your LODE balance, stake, and withdrawal requests. Transactions are signed by your wallet; the dashboard never asks for a private key.
+          </p>
         </div>
       ) : (
         <>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-xs text-slate-500">Wallet balance</p>
-              <p className="mt-2 font-bold text-white">{account ? `${fmtToken(account.tokenBalance, tokenDecimals)} LODE` : accountLoading ? "Loading…" : "Unavailable"}</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-xs text-slate-500">Effective stake</p>
-              <p className="mt-2 font-bold text-white">{account ? `${fmtToken(account.effectiveStake, tokenDecimals)} LODE` : accountLoading ? "Loading…" : "Unavailable"}</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-xs text-slate-500">Minimum to report</p>
-              <p className="mt-2 font-bold text-white">{account ? `${fmtToken(account.minStake, tokenDecimals)} LODE` : accountLoading ? "Loading…" : "Unavailable"}</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-xs text-slate-500">Operator status</p>
-              <p className={`mt-2 font-bold ${eligible ? "text-emerald-300" : "text-amber-200"}`}>{account ? eligible ? "Eligible" : "Not eligible" : accountLoading ? "Loading…" : "Unavailable"}</p>
-            </div>
+            <MetricTile label="Wallet balance" value={account ? `${fmtToken(account.tokenBalance, tokenDecimals)} LODE` : accountLoading ? "Loading…" : "Unavailable"} />
+            <MetricTile label="Effective stake" value={account ? `${fmtToken(account.effectiveStake, tokenDecimals)} LODE` : accountLoading ? "Loading…" : "Unavailable"} />
+            <MetricTile label="Minimum to report" value={account ? `${fmtToken(account.minStake, tokenDecimals)} LODE` : accountLoading ? "Loading…" : "Unavailable"} />
+            <MetricTile label="Operator status" value={account ? eligible ? "Eligible" : "Not eligible" : accountLoading ? "Loading…" : "Unavailable"} tone={account ? (eligible ? "live" : "warn") : "idle"} />
           </div>
 
           {account && account.nativeBalance < 10n ** 16n && (
-            <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-sm text-amber-100">
-              Your BOT gas balance is low. Fund this wallet with BOT before sending transactions.
+            <p className="mt-4 flex items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100">
+              <AlertIcon className="h-4 w-4 shrink-0" /> Your BOT gas balance is low. Fund this wallet with BOT before sending transactions.
             </p>
           )}
 
@@ -306,14 +340,14 @@ export default function OperatorConsole({
                 }, "LODE stake confirmed on-chain.");
               }}
             >
-              <h3 className="font-bold text-white">Stake LODE</h3>
+              <h3 className="flex items-center gap-2 font-bold text-white"><CoinsIcon className="h-4 w-4 text-cyan-300" /> Stake LODE</h3>
               <p className="mt-1 text-sm text-slate-400">First-time staking asks your wallet to approve the exact amount.</p>
               <label className="mt-4 block text-xs font-semibold text-slate-300">
                 Amount (LODE)
                 <input className={fieldClass} type="number" min="0" step="any" inputMode="decimal" value={stakeAmount} onChange={(event) => setStakeAmount(event.target.value)} placeholder="e.g. 1000" required />
               </label>
               <button type="button" className="mt-2 text-xs font-semibold text-cyan-300 hover:text-cyan-100" onClick={() => setStakeAmount(account ? formatUnits(account.tokenBalance, tokenDecimals) : "")}>Use full balance</button>
-              <button type="submit" disabled={!account || Boolean(busy)} className="mt-4 w-full rounded-xl bg-cyan-300 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{busy && (busy.includes("Staking") || busy.includes("Approve")) ? busy : "Approve & stake LODE"}</button>
+              <button type="submit" disabled={!account || Boolean(busy)} className="btn-primary mt-4 w-full">{busy && (busy.includes("Staking") || busy.includes("Approve")) ? busy : "Approve & stake LODE"}</button>
             </form>
 
             <form
@@ -328,14 +362,14 @@ export default function OperatorConsole({
                 }, "Withdrawal request queued. LODE can be claimed after the 7-day delay.");
               }}
             >
-              <h3 className="font-bold text-white">Request withdrawal</h3>
+              <h3 className="flex items-center gap-2 font-bold text-white"><ClockIcon className="h-4 w-4 text-cyan-300" /> Request withdrawal</h3>
               <p className="mt-1 text-sm text-slate-400">Requested LODE stops counting as eligible stake immediately.</p>
               <label className="mt-4 block text-xs font-semibold text-slate-300">
                 Amount (LODE)
                 <input className={fieldClass} type="number" min="0" step="any" inputMode="decimal" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="Amount to unstake" required />
               </label>
               <button type="button" className="mt-2 text-xs font-semibold text-cyan-300 hover:text-cyan-100" onClick={() => setWithdrawAmount(account ? formatUnits(account.effectiveStake, tokenDecimals) : "")}>Use effective stake</button>
-              <button type="submit" disabled={!account || account.effectiveStake === 0n || Boolean(busy)} className="mt-4 w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50">{busy.includes("withdrawal") ? busy : "Queue withdrawal"}</button>
+              <button type="submit" disabled={!account || account.effectiveStake === 0n || Boolean(busy)} className="btn-ghost mt-4 w-full">{busy.includes("withdrawal") ? busy : "Queue withdrawal"}</button>
             </form>
           </div>
 
@@ -345,23 +379,23 @@ export default function OperatorConsole({
                 <h3 className="font-bold text-white">Withdrawal requests</h3>
                 <p className="mt-1 text-sm text-slate-400">Claim a request once its seven-day unlock time has passed.</p>
               </div>
-              <span className="text-xs text-slate-500">{account?.withdrawals.filter((request) => request.amount > 0n).length ?? 0} pending</span>
+              <Badge tone="idle">{account?.withdrawals.filter((request) => request.amount > 0n).length ?? 0} pending</Badge>
             </div>
             {account?.withdrawals.filter((request) => request.amount > 0n).length ? (
               <div className="mt-4 space-y-2">
                 {account.withdrawals.filter((request) => request.amount > 0n).map((request) => {
                   const ready = request.availableAt.getTime() <= Date.now();
                   return (
-                    <div key={request.index} className="flex flex-col gap-3 rounded-xl border border-white/5 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div key={request.index} className="flex flex-col gap-3 rounded-xl border border-white/5 bg-ink-900/60 p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="font-semibold text-white">{fmtToken(request.amount, tokenDecimals)} LODE</p>
+                        <p className="font-semibold text-white tnum">{fmtToken(request.amount, tokenDecimals)} LODE</p>
                         <p className="mt-1 text-xs text-slate-500">{ready ? "Available now" : `Unlocks ${request.availableAt.toLocaleString()}`}</p>
                       </div>
                       <button
                         type="button"
                         disabled={!ready || Boolean(busy)}
                         onClick={() => void runAction("Claiming withdrawal…", () => claimLodeWithdrawal(address, request.index), "Withdrawal claimed and transferred to your wallet.")}
-                        className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-300/40 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="btn-ghost"
                       >
                         {busy.includes("Claiming") ? busy : ready ? "Claim LODE" : "Locked"}
                       </button>
@@ -384,12 +418,12 @@ export default function OperatorConsole({
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="font-bold text-white">Submit a feed price</h3>
+                <h3 className="flex items-center gap-2 font-bold text-white"><BoltIcon className="h-4 w-4 text-cyan-300" /> Submit a feed price</h3>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
                   Enter the locally aggregated quote from your independent sources. This form timestamps the report when you submit it; it does not fetch or validate market data for you.
                 </p>
               </div>
-              <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${eligible ? "bg-emerald-500/10 text-emerald-200" : "bg-amber-500/10 text-amber-200"}`}>{eligible ? "Eligible to report" : "Minimum stake required"}</span>
+              <Badge tone={eligible ? "live" : "warn"}>{eligible ? "Eligible to report" : "Minimum stake required"}</Badge>
             </div>
             {feeds.length ? (
               <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -403,7 +437,7 @@ export default function OperatorConsole({
                   Price ({selectedFeed?.decimals ?? 8} decimals)
                   <input className={fieldClass} type="number" min="0" step="any" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="e.g. 0.25000000" required />
                 </label>
-                <button type="submit" disabled={!selectedFeed || selectedFeed.isPaused || !eligible || Boolean(busy)} className="rounded-xl bg-cyan-300 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{busy.includes("Submitting") ? busy : "Submit price"}</button>
+                <button type="submit" disabled={!selectedFeed || selectedFeed.isPaused || !eligible || Boolean(busy)} className="btn-primary">{busy.includes("Submitting") ? busy : "Submit price"}</button>
               </div>
             ) : (
               <p className="mt-4 text-sm text-slate-500">No registered feeds are available to report.</p>
@@ -414,20 +448,27 @@ export default function OperatorConsole({
       )}
 
       {error && (
-        <div className="mt-5 rounded-xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100" role="alert">
-          <p>{error}</p>
-          {error.includes("No browser wallet") && (
-            <p className="mt-2 text-rose-100/80">
-              MetaMask:{" "}
-              <a className="font-semibold underline underline-offset-2 hover:text-white" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
-                install the wallet extension
-              </a>
-              {" "}and reload, or open the dashboard in MetaMask Mobile&apos;s browser.
-            </p>
-          )}
+        <div className="mt-5 flex items-start gap-2 rounded-xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100" role="alert">
+          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p>{error}</p>
+            {error.includes("No browser wallet") && (
+              <p className="mt-2 text-rose-100/80">
+                MetaMask:{" "}
+                <a className="font-semibold underline underline-offset-2 hover:text-white" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
+                  install the wallet extension
+                </a>{" "}
+                and reload, or open the dashboard in a wallet&apos;s in-app browser.
+              </p>
+            )}
+          </div>
         </div>
       )}
-      {notice && <p className="mt-5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100" role="status">{notice}</p>}
+      {notice && (
+        <p className="mt-5 flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100" role="status">
+          <ShieldIcon className="h-4 w-4 shrink-0" /> {notice}
+        </p>
+      )}
       {busy && !busy.includes("Approve") && !busy.includes("Staking") && !busy.includes("withdrawal") && !busy.includes("Claiming") && !busy.includes("Submitting") && (
         <p className="mt-3 text-xs text-slate-500" role="status">{busy}</p>
       )}
