@@ -1,0 +1,33 @@
+{
+  "filter_paths": "contracts/node_modules|contracts/artifacts|contracts/cache|contracts/test",
+  "solc_remaps": [
+    "@openzeppelin/=contracts/node_modules/@openzeppelin/",
+    "hardhat/=contracts/node_modules/hardhat/"
+  ],
+  "detectors_to_run": [
+    "reentrancy-eth",
+    "reentrancy-no-eth",
+    "uninitialized-state",
+    "uninitialized-storage",
+    "arbitrary-send-eth",
+    "tx-origin",
+    "assembly",
+    "missing-zero-check",
+    "incorrect-equality",
+    "unchecked-transfer",
+    "locked-ether",
+    "constant-function-asm",
+    "shadowing-state",
+    "shadowing-abstract",
+    "suicidal",
+    "unprotected-upgrade",
+    "variable-scope",
+    "control-flow-constant",
+    "brittle-comparisons"
+  ],
+  "exclude_informational": true,
+  "exclude_low": true,
+  "exclude_medium": false,
+  "exclude_high": false,
+  "legacy_ast": false
+}

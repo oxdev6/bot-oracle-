@@ -98,6 +98,16 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
         uint256  lastSubmissionRound;
     }
 
+    /// @notice A single published round (see `rounds`). Written only when a
+    ///         round actually published a price.
+    struct RoundRecord {
+        int256  answer;
+        uint256 updatedAt;
+        uint256 inThreshold;
+        uint256 vetoed;
+        bool    published;
+    }
+
     // ── state ──────────────────────────────────────────────────────────
     IStakingVault public immutable vault;
 
@@ -131,6 +141,20 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
     mapping(bytes32 => mapping(address => OperatorStats)) public operatorStats;
     mapping(bytes32 => address[]) private _operatorList;
 
+    /// @notice Published history per asset and round. Written at round close
+    ///         only when a price was actually published (round reached quorum
+    ///         and did not trip the circuit breaker). This is what lets
+    ///         `PriceFeed.getRoundData(uint80)` return real history instead of
+    ///         echoing "today's" value.
+    mapping(bytes32 => mapping(uint80 => RoundRecord)) public rounds;
+
+    /// @notice Owner kill-switch per asset. A deactivated asset rejects new
+    ///         submissions but keeps its published history readable, so a
+    ///         deprecated pair can never write another price while consumers
+    ///         can still audit what it last said. Append-only storage; an
+    ///         unset entry means "active".
+    mapping(bytes32 => bool) public assetDeactivated;
+
     // ── events ─────────────────────────────────────────────────────────
     event PriceSubmitted(bytes32 indexed assetId, address indexed operator, int256 price, uint256 roundId);
     event RoundClosed(bytes32 indexed assetId, uint80 roundId, int256 price, uint256 inThresholdSubmissions, uint256 vetoedSubmissions);
@@ -155,6 +179,10 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
     );
     event OperatorSlashed(bytes32 indexed assetId, address indexed operator, uint256 amount, bytes32 reason);
     event RewardsSkipped(bytes32 indexed assetId, uint256 roundId, uint256 amount);
+    event AssetDeactivated(bytes32 indexed assetId);
+    event AssetActivated(bytes32 indexed assetId);
+    /// @notice Emitted by the permissionless keeper after a batch close attempt.
+    event RoundsProcessed(uint256 requested, uint256 closed);
 
     /// @dev Reason codes for `RoundClosedNoData`.
     uint8 public constant NO_SUBMISSIONS = 0;
@@ -238,6 +266,23 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
         return feeds[assetId].paused;
     }
 
+    /// @notice True when the asset accepts new submissions (registered, not
+    ///         circuit-broken and not administratively deactivated).
+    function isAssetActive(bytes32 assetId) external view returns (bool) {
+        FeedState storage feed = feeds[assetId];
+        return feed.exists && !feed.paused && !assetDeactivated[assetId];
+    }
+
+    /// @notice Published round record for an asset. `published == false` means
+    ///         that round id produced no price (below quorum or breaker).
+    function getRoundData(bytes32 assetId, uint80 roundId)
+        external
+        view
+        returns (RoundRecord memory)
+    {
+        return rounds[assetId][roundId];
+    }
+
     // ─────────────────── submissions ───────────────────────────────────
 
     /**
@@ -254,6 +299,7 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
         FeedState storage feed = feeds[assetId];
         require(feed.exists, "OA: unknown asset");
         require(!feed.paused, "OA: feed paused");
+        require(!assetDeactivated[assetId], "OA: asset deactivated");
         require(price > 0, "OA: price must be positive");
         require(vault.isEligibleOperator(msg.sender), "OA: not eligible");
         require(uint256(sourceTimestamp) <= block.timestamp + 60, "OA: future timestamp");
@@ -303,6 +349,34 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
         require(!feed.paused, "OA: feed paused");
         require(block.timestamp >= feed.roundStart + roundInterval, "OA: round active");
         _closeRound(assetId);
+    }
+
+    /**
+     * @notice Permissionless batch round-closer for keepers/relayers.
+     *
+     *  A round is normally closed by the next submission or an explicit
+     *  `closeRound`. If a feed goes quiet (an RSS/source outage, all operators
+     *  offline) nobody triggers that, and the feed stalls without advancing its
+     *  round counter — which also means liveness misses are never accounted.
+     *  This entrypoint lets any third party (a bot, a dashboard cron, an
+     *  operator) close every due feed in one transaction.
+     *
+     *  Entries that are unknown, paused, deactivated, never started
+     *  (`roundStart == 0`) or still inside their window are skipped rather than
+     *  reverting, so a keeper can safely fire the whole registry atomically.
+     */
+    function closeRounds(bytes32[] calldata assetIds) external nonReentrant {
+        uint256 closed;
+        for (uint256 i; i < assetIds.length; ++i) {
+            bytes32 assetId = assetIds[i];
+            FeedState storage feed = feeds[assetId];
+            if (!feed.exists || feed.paused) continue;
+            if (feed.roundStart == 0) continue;
+            if (block.timestamp < feed.roundStart + roundInterval) continue;
+            _closeRound(assetId);
+            unchecked { ++closed; }
+        }
+        emit RoundsProcessed(assetIds.length, closed);
     }
 
     function _closeRound(bytes32 assetId) internal {
@@ -388,6 +462,13 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
         feed.lastAnswer = finalMedian;
         feed.lastUpdate = block.timestamp;
         feed.lastRoundSubmissions = inThreshold;
+        rounds[assetId][newRoundId] = RoundRecord({
+            answer: finalMedian,
+            updatedAt: block.timestamp,
+            inThreshold: inThreshold,
+            vetoed: vetoed,
+            published: true
+        });
 
         // 5. punish provable violations
         _settleLiveness(assetId, closingRound, true);
@@ -638,6 +719,27 @@ contract OracleAggregator is Ownable, ReentrancyGuard {
         require(!feed.paused, "OA: already paused");
         feed.paused = true;
         emit FeedPausedByOwner(assetId);
+    }
+
+    /**
+     * @notice Permanently (until re-activated) stop new submissions for an
+     *         asset without deleting its history. Prefer this over `pauseFeed`
+     *         for a pair that is being retired: the feed is not "paused
+     *         pending review", it is decommissioned.
+     */
+    function deactivateAsset(bytes32 assetId) external onlyOwner {
+        require(feeds[assetId].exists, "OA: unknown asset");
+        require(!assetDeactivated[assetId], "OA: already deactivated");
+        assetDeactivated[assetId] = true;
+        emit AssetDeactivated(assetId);
+    }
+
+    /// @notice Re-enable submissions for a previously deactivated asset.
+    function activateAsset(bytes32 assetId) external onlyOwner {
+        require(feeds[assetId].exists, "OA: unknown asset");
+        require(assetDeactivated[assetId], "OA: already active");
+        assetDeactivated[assetId] = false;
+        emit AssetActivated(assetId);
     }
 
     function setRoundInterval(uint256 newInterval) external onlyOwner {

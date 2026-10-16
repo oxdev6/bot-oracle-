@@ -22,9 +22,14 @@ import {OracleAggregator} from "./OracleAggregator.sol";
  *      not required to call them, which is exactly why the aggregator pauses
  *      instead of publishing a value it cannot stand behind.
  *
+ *  History:
+ *    - `getRoundData(_roundId)` returns the aggregator's published record for
+ *      that round, and reverts when the round produced no price (below quorum
+ *      or circuit-broken) exactly as Chainlink does for unknown rounds.
+ *
  *  Limitations (documented):
- *    - getRoundData() returns latestRoundData — no on-chain history.
- *    - startedAt equals updatedAt (aggregator tracks only last update).
+ *    - startedAt equals updatedAt (the aggregator tracks only the last update
+ *      time per round, not a separate round-open timestamp).
  *    - Round ids restart from the aggregator's own numbering; they are not
  *      Chainlink's global round ids.
  */
@@ -75,7 +80,7 @@ contract PriceFeed is AggregatorV3Interface {
     }
 
     function getRoundData(
-        uint80 /* _roundId */
+        uint80 _roundId
     )
         external
         view
@@ -88,7 +93,15 @@ contract PriceFeed is AggregatorV3Interface {
             uint80 answeredInRound
         )
     {
-        return _readLatest();
+        OracleAggregator.RoundRecord memory r = aggregator.getRoundData(assetId, _roundId);
+        require(r.published, "PF: no data for round");
+        return (_roundId, r.answer, r.updatedAt, r.updatedAt, _roundId);
+    }
+
+    /// @notice Latest round id known to the aggregator (0 before the first
+    ///         successful round). Mirrors Chainlink's `latestRound()`.
+    function latestRound() external view returns (uint80) {
+        return uint80(aggregator.getLatestPrice(assetId).roundId);
     }
 
     // ─────────────────── Lodestar extras ───────────────────────────────
